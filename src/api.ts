@@ -14,6 +14,17 @@ import type {
   SearchQuery,
 } from "./types";
 
+export { formatFromWhom, formatToWhom } from "./boundBookFormat";
+
+export interface InspectionPackageResult {
+  directory: string;
+  csvPath: string;
+  asciiPath: string;
+  manifestPath: string;
+  entryCount: number;
+  createdAt: string;
+}
+
 export const api = {
   getDbStatus: () => invoke<DbStatus>("get_db_status"),
   openOrCreateDb: (customPath?: string | null) =>
@@ -45,33 +56,12 @@ export const api = {
     invoke<ExportResult>("export_csv", { destPath }),
   exportAscii: (destPath: string) =>
     invoke<ExportResult>("export_ascii", { destPath }),
+  exportInspectionPackage: (destDir: string) =>
+    invoke<InspectionPackageResult>("export_inspection_package", { destDir }),
+  writeBinaryFile: (destPath: string, dataBase64: string) =>
+    invoke<void>("write_binary_file", { destPath, dataBase64 }),
   listEntriesForPrint: (correctionView?: string) =>
     invoke<BoundBookEntry[]>("list_entries_for_print", {
       correctionView: correctionView ?? "corrected",
     }),
 };
-
-export function formatFromWhom(e: BoundBookEntry): string {
-  switch (e.acquiredFromKind) {
-    case "licensee":
-      return `${e.acquiredFromName} — FFL ${e.acquiredFromFfl ?? ""}`.trim();
-    case "opening_inventory":
-      return `${e.acquiredFromName} (opening inventory)`;
-    default:
-      return [e.acquiredFromName, e.acquiredFromAddress].filter(Boolean).join(" — ");
-  }
-}
-
-export function formatToWhom(e: BoundBookEntry): string {
-  if (e.status === "open" || !e.disposedToKind) return "";
-  switch (e.disposedToKind) {
-    case "form_4473":
-      return `4473 # ${e.form4473TransactionNumber ?? ""}`;
-    case "licensee":
-      return `${e.disposedToName ?? ""} — FFL ${e.disposedToFfl ?? ""}`.trim();
-    case "book_rollover_ref":
-      return e.dispositionReference ?? "";
-    default:
-      return [e.disposedToName, e.disposedToAddress].filter(Boolean).join(" — ");
-  }
-}

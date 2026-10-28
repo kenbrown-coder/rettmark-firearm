@@ -168,6 +168,17 @@ pub struct ExportResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InspectionPackageResult {
+    pub directory: String,
+    pub csv_path: String,
+    pub ascii_path: String,
+    pub manifest_path: String,
+    pub entry_count: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DbStatus {
     pub path: String,
     pub initialized: bool,

@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, formatFromWhom, formatToWhom } from "./api";
+import { InspectionView } from "./InspectionView";
 import { buildBoundBookPdf } from "./printPdf";
 import type {
   BoundBookEntry,
@@ -347,6 +348,48 @@ export default function App() {
     }
   }
 
+  async function exportInspectionPackage() {
+    setError(null);
+    try {
+      const parent = await open({
+        directory: true,
+        multiple: false,
+        title: "Choose folder for inspection / OOB export package",
+      });
+      if (typeof parent !== "string" || !parent) return;
+      setBusy(true);
+      const pkg = await api.exportInspectionPackage(parent);
+      const list = await api.listEntriesForPrint("corrected");
+      const doc = buildBoundBookPdf(license, list);
+      const dataUri = doc.output("datauristring");
+      const base64 = dataUri.split(",")[1] ?? "";
+      const pdfName = pkg.csvPath.replace(/\.csv$/i, ".pdf");
+      await api.writeBinaryFile(pdfName, base64);
+      setLastExportAt(pkg.createdAt);
+      setNotice(
+        `Inspection package written (${pkg.entryCount} lines): ${pkg.directory} (PDF + CSV + ASCII + MANIFEST)`,
+      );
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openInspection() {
+    setError(null);
+    try {
+      setBusy(true);
+      const list = await api.listEntriesForPrint("corrected");
+      setEntries(list);
+      setPanel("inspect");
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveBackupSettings(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -605,6 +648,7 @@ export default function App() {
             ["acquire", "Acquisition"],
             ["dispose", "Disposition"],
             ["correct", "Correct"],
+            ["inspect", "Inspection"],
             ["export", "Print / export"],
             ["settings", "Backup & license"],
           ] as const
@@ -613,7 +657,10 @@ export default function App() {
             key={id}
             type="button"
             className={panel === id ? "active" : ""}
-            onClick={() => setPanel(id)}
+            onClick={() => {
+              if (id === "inspect") void openInspection();
+              else setPanel(id);
+            }}
           >
             {label}
           </button>
@@ -1180,20 +1227,43 @@ export default function App() {
           </section>
         )}
 
+        {panel === "inspect" && (
+          <InspectionView
+            license={license}
+            entries={entries}
+            busy={busy}
+            onPrint={() => window.print()}
+            onExportPackage={() => void exportInspectionPackage()}
+          />
+        )}
+
         {panel === "export" && (
           <section className="panel">
             <h2>Print / export</h2>
             <p className="lede">
               Produce an unencrypted premises download sorted by acquisition date. Keep the last
               download until the next (Ruling 2016-1). Prefer at least semiannual for local
-              systems; print on ATF request within 24 hours.
+              systems; print on ATF request within 24 hours. For a full handoff folder, use the
+              inspection package (PDF + CSV + ASCII).
             </p>
             <div className="form-actions">
-              <button className="btn" type="button" onClick={exportPdf} disabled={busy}>
-                Save PDF bound book
+              <button
+                className="btn"
+                type="button"
+                onClick={() => void exportInspectionPackage()}
+                disabled={busy}
+              >
+                Export inspection package
               </button>
-              <button className="btn secondary" type="button" onClick={() => window.print()}>
-                Print this view
+              <button className="btn secondary" type="button" onClick={exportPdf} disabled={busy}>
+                Save PDF only
+              </button>
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => void openInspection()}
+              >
+                Open inspection mode
               </button>
               <button className="btn secondary" type="button" onClick={exportCsv} disabled={busy}>
                 Export CSV

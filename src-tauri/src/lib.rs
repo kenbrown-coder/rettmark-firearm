@@ -33,6 +33,8 @@ pub fn run() {
             commands::restore_from_backup,
             commands::export_csv,
             commands::export_ascii,
+            commands::export_inspection_package,
+            commands::write_binary_file,
             commands::list_entries_for_print,
         ])
         .run(tauri::generate_context!())

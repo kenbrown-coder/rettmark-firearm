@@ -496,6 +496,75 @@ button.linkish {
   text-decoration: underline;
 }
 
+.inspection-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.inspection-letterhead {
+  border: 1px solid var(--rule-strong);
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.85rem;
+  background: #fff;
+}
+
+.inspection-title {
+  font-family: var(--font-brand);
+  font-size: 1.2rem;
+  margin-bottom: 0.25rem;
+}
+
+.inspection-letterhead .muted {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.pager {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.65rem;
+}
+
+.inspection-table thead .subhead-row th {
+  background: #3a4f43;
+  font-weight: 500;
+  font-size: 0.72rem;
+}
+
+.inspection-scroll {
+  max-height: calc(100vh - 360px);
+}
+
+.print-only-all {
+  display: none;
+}
+
+@media print {
+  .inspection-scroll {
+    display: none !important;
+  }
+
+  .print-only-all {
+    display: block !important;
+  }
+
+  .backup-banner,
+  .pager,
+  .inspection-head .form-actions {
+    display: none !important;
+  }
+
+  .inspection-letterhead {
+    border: none;
+    padding: 0 0 0.5rem;
+  }
+}
+
 @media print {
   body {
     background: #fff;

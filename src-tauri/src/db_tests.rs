@@ -109,5 +109,18 @@ mod tests {
             })
             .unwrap();
         assert_eq!(both.len(), 2);
+
+        let package_dir = std::env::temp_dir().join(format!(
+            "rettmark-inspection-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let pkg = crate::export::export_inspection_package(&db, &package_dir).unwrap();
+        assert!(std::path::Path::new(&pkg.csv_path).exists());
+        assert!(std::path::Path::new(&pkg.ascii_path).exists());
+        assert!(std::path::Path::new(&pkg.manifest_path).exists());
+        assert_eq!(pkg.entry_count, 1);
     }
 }

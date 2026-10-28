@@ -354,6 +354,31 @@ pub fn export_ascii(state: State<'_, DbState>, dest_path: String) -> Result<Expo
 }
 
 #[tauri::command]
+pub fn export_inspection_package(
+    state: State<'_, DbState>,
+    dest_dir: String,
+) -> Result<InspectionPackageResult, String> {
+    with_db(&state, |db| {
+        let base = PathBuf::from(dest_dir.trim());
+        let package_dir = export::package_dir_with_stamp(&base);
+        export::export_inspection_package(db, &package_dir).map_err(|e| e.to_string())
+    })
+}
+
+#[tauri::command]
+pub fn write_binary_file(dest_path: String, data_base64: String) -> Result<(), String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.trim())
+        .map_err(|e| format!("invalid base64: {e}"))?;
+    let path = PathBuf::from(dest_path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(path, bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn list_entries_for_print(
     state: State<'_, DbState>,
     correction_view: Option<String>,

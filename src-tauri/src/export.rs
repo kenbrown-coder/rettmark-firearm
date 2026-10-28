@@ -1,9 +1,10 @@
 use crate::db::AppDb;
-use crate::models::{ExportResult, SearchQuery};
+use crate::models::{ExportResult, InspectionPackageResult, SearchQuery};
 use anyhow::{Context, Result};
+use chrono::Utc;
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn export_csv(db: &AppDb, dest: &Path) -> Result<ExportResult> {
     let entries = db.search(SearchQuery {
@@ -162,4 +163,79 @@ pub fn export_ascii(db: &AppDb, dest: &Path) -> Result<ExportResult> {
         count,
         Some("ASCII text download for premises / OOB path"),
     )
+}
+
+/// Writes CSV + ASCII + MANIFEST into `dest_dir` for inspection / OOB handoff.
+/// PDF is added by the UI into the same folder.
+pub fn export_inspection_package(db: &AppDb, dest_dir: &Path) -> Result<InspectionPackageResult> {
+    std::fs::create_dir_all(dest_dir).context("create inspection package directory")?;
+    let stamp = dest_dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .and_then(|s| s.strip_prefix("rettmark-inspection-"))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Utc::now().format("%Y%m%d-%H%M%S").to_string());
+    let csv_path = dest_dir.join(format!("rettmark-ad-{stamp}.csv"));
+    let ascii_path = dest_dir.join(format!("rettmark-ad-{stamp}.txt"));
+    let pdf_name = format!("rettmark-ad-{stamp}.pdf");
+    let manifest_path = dest_dir.join("MANIFEST.txt");
+
+    let csv = export_csv(db, &csv_path)?;
+    let ascii = export_ascii(db, &ascii_path)?;
+    let license = db.get_license()?;
+    let created_at = Utc::now().to_rfc3339();
+
+    let mut m = File::create(&manifest_path)?;
+    writeln!(m, "Rettmark Firearms — Inspection / OOB export package")?;
+    writeln!(m, "Created: {created_at}")?;
+    writeln!(m, "Format basis: 27 CFR 478.125(e); ATF Ruling 2016-1")?;
+    writeln!(
+        m,
+        "View: effective (corrected) A&D lines, sorted by acquisition date"
+    )?;
+    if let Some(lic) = &license {
+        writeln!(m, "Business: {}", lic.business_name)?;
+        writeln!(m, "FFL: {}", lic.ffl_number)?;
+        writeln!(m, "Operator: {}", lic.operator_name)?;
+    }
+    writeln!(m, "Entry count: {}", csv.entry_count)?;
+    writeln!(m, "Files:")?;
+    writeln!(m, "  - {}", csv_path.file_name().unwrap().to_string_lossy())?;
+    writeln!(
+        m,
+        "  - {}",
+        ascii_path.file_name().unwrap().to_string_lossy()
+    )?;
+    writeln!(
+        m,
+        "  - {pdf_name}  (written by app UI if PDF step succeeds)"
+    )?;
+    writeln!(m)?;
+    writeln!(
+        m,
+        "Disclaimer: ATF does not certify software. Not legal advice. Licensee remains responsible."
+    )?;
+
+    db.record_export(
+        "inspection_package",
+        &dest_dir.display().to_string(),
+        csv.entry_count,
+        Some("Inspection/OOB package (CSV+ASCII+manifest; PDF via UI)"),
+    )?;
+    db.set_setting("last_atf_export_at", &created_at)?;
+
+    let _ = ascii;
+    Ok(InspectionPackageResult {
+        directory: dest_dir.display().to_string(),
+        csv_path: csv_path.display().to_string(),
+        ascii_path: ascii_path.display().to_string(),
+        manifest_path: manifest_path.display().to_string(),
+        entry_count: csv.entry_count,
+        created_at,
+    })
+}
+
+pub fn package_dir_with_stamp(base: &Path) -> PathBuf {
+    let stamp = Utc::now().format("%Y%m%d-%H%M%S");
+    base.join(format!("rettmark-inspection-{stamp}"))
 }

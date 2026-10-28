@@ -21,7 +21,8 @@ Local-first desktop app for **Rettmark Firearms** (Ken Brown) to keep the dealer
 - **Search** by serial, manufacturer/importer, name, address, 4473 #, acquisition date range; open-inventory filter; original / corrected / both views
 - **Corrections** without destroying the original (Ruling 2016-1 method a)
 - **Print / PDF / CSV / ASCII** export in acquisition-date order
-- **Encrypted backup** (AES-256-GCM + Argon2id passphrase) to a user-chosen sync folder (OneDrive or Google Drive)
+- **Inspection mode** (read-only paper-column view) and one-click **inspection package** (PDF + CSV + ASCII + MANIFEST)
+- **Encrypted backup** (AES-256-GCM + Argon2id passphrase) to a user-chosen sync folder (OneDrive or Google Drive), with restore
 
 **Out of scope for v1:** e4473, POS, multi-user/roles, multi-FFL, NFA/gunsmith books, cloud SaaS hosting.
 
@@ -49,6 +50,7 @@ Local-first desktop app for **Rettmark Firearms** (Ken Brown) to keep the dealer
 ```bash
 git clone https://github.com/kenbrown-coder/rettmark-firearm.git
 cd rettmark-firearm
+git checkout cursor/ffl-bound-book-mvp-d014   # or pull the open PR branch
 npm install
 npm run tauri:dev
 ```
@@ -61,11 +63,42 @@ Frontend-only (UI without native commands — useful for layout checks only):
 npm run dev
 ```
 
+Tests / build smoke:
+
+```bash
+npm test
+npm run build
+cd src-tauri && cargo test
+```
+
 Production build:
 
 ```bash
 npm run tauri:build
 ```
+
+---
+
+## First 10 minutes (sample acquisition + disposition)
+
+1. Run `npm run tauri:dev` and wait for the window.
+2. On first launch, confirm **Rettmark Firearms**, enter your **FFL number**, leave **Forms 4473 filed numerically** checked, click **Open bound book**.
+3. Empty book → click **Add first acquisition**.
+4. Fill a sample receipt, for example:
+   - Manufacturer: `Glock`
+   - Model: `19`
+   - Serial: `DEMO-001`
+   - Type: `Pistol`
+   - Caliber: `9mm`
+   - Date: today
+   - From whom: **Licensee** — name `Sample Distributor`, FFL `1-XX-XXX-XX-XX-99999`
+5. Click **Commit acquisition line**. The bound book shows an **open** (highlighted) line.
+6. Click that line → **Record disposition** (or open **Disposition**).
+7. Keep **Form 4473 transaction #**, enter e.g. `4473-1001`, date today → **Record disposition**.
+8. Open **Inspection** for a read-only paper-style view; optionally **Export inspection package** (PDF + CSV + ASCII) to a folder.
+9. Click **Backup now** (or **Backup & license** → **Choose folder…**) and write an encrypted `.rfbk` to your Drive sync folder.
+
+You now have one closed A&D line, an inspection view, and (if step 9 succeeded) an offsite encrypted copy.
 
 ---
 

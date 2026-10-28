@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { BoundBookEntry, License } from "./types";
-import { formatFromWhom, formatToWhom } from "./api";
+import { formatFromWhom, formatToWhom } from "./boundBookFormat";
 
 export function buildBoundBookPdf(
   license: License | null,

@@ -152,6 +152,7 @@ export type Panel =
   | "acquire"
   | "dispose"
   | "correct"
+  | "inspect"
   | "export"
   | "settings"
   | "setup";
