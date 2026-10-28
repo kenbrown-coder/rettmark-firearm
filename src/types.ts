@@ -147,6 +147,12 @@ export interface DbStatus {
   openCount: number;
 }
 
+export interface SampleDemoStatus {
+  loaded: boolean;
+  sampleCount: number;
+  nonSampleCount: number;
+}
+
 export type Panel =
   | "book"
   | "acquire"

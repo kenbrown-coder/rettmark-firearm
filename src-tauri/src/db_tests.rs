@@ -123,4 +123,24 @@ mod tests {
         assert!(std::path::Path::new(&pkg.manifest_path).exists());
         assert_eq!(pkg.entry_count, 1);
     }
+
+    #[test]
+    fn sample_demo_load_and_wipe() {
+        let db = temp_db();
+        let loaded = crate::sample::load_sample_demo(&db).unwrap();
+        assert!(loaded.loaded);
+        assert!(loaded.sample_count >= 5);
+        let open: i64 = db
+            .search(crate::models::SearchQuery {
+                open_only: Some(true),
+                correction_view: Some("corrected".into()),
+                ..Default::default()
+            })
+            .unwrap()
+            .len() as i64;
+        assert!(open >= 2);
+        let wiped = crate::sample::wipe_sample_demo(&db).unwrap();
+        assert!(!wiped.loaded);
+        assert_eq!(wiped.sample_count, 0);
+    }
 }

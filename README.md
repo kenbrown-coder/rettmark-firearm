@@ -2,7 +2,8 @@
 
 Local-first desktop app for **Rettmark Firearms** (Ken Brown) to keep the dealer Acquisition & Disposition “bound book” electronically: same columns as the paper book under [27 CFR 478.125(e)](https://www.ecfr.gov/current/title-27/chapter-II/subchapter-B/part-478/subpart-H/section-478.125), with search, non-destructive corrections, print/export, and encrypted offsite backup.
 
-**Stack:** Tauri 2 · React · TypeScript · Vite · SQLite
+**Stack:** Tauri 2 · React · TypeScript · Vite · SQLite  
+**Primary target:** Windows 10/11 premises PC (WebView2)
 
 ---
 
@@ -22,6 +23,7 @@ Local-first desktop app for **Rettmark Firearms** (Ken Brown) to keep the dealer
 - **Corrections** without destroying the original (Ruling 2016-1 method a)
 - **Print / PDF / CSV / ASCII** export in acquisition-date order
 - **Inspection mode** (read-only paper-column view) and one-click **inspection package** (PDF + CSV + ASCII + MANIFEST)
+- **SAMPLE/DEMO book** — one-click fictional lines (clearly marked); wipe anytime
 - **Encrypted backup** (AES-256-GCM + Argon2id passphrase) to a user-chosen sync folder (OneDrive or Google Drive), with restore
 
 **Out of scope for v1:** e4473, POS, multi-user/roles, multi-FFL, NFA/gunsmith books, cloud SaaS hosting.
@@ -36,69 +38,95 @@ Local-first desktop app for **Rettmark Firearms** (Ken Brown) to keep the dealer
 
 ---
 
-## Prerequisites
+## Windows prerequisites (recommended)
 
-- [Node.js](https://nodejs.org/) 20+ and npm
-- [Rust](https://rustup.rs/) stable (for Tauri)
-- Linux: WebKitGTK 4.1 and related Tauri system deps (see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
-- macOS / Windows: standard Tauri desktop toolchain
+Install these on the shop PC before the first run:
+
+1. **[Node.js 20 LTS or newer](https://nodejs.org/)** (includes npm).  
+   Confirm in PowerShell: `node -v` and `npm -v`.
+2. **[Rust (rustup)](https://rustup.rs/)** — install `stable` toolchain for `x86_64-pc-windows-msvc`.  
+   Confirm: `rustc -V` and `cargo -V`.
+3. **Microsoft C++ Build Tools** (needed to compile Tauri/native deps):  
+   - [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)  
+   - Select workload **“Desktop development with C++”** (MSVC + Windows SDK).
+4. **WebView2 Runtime** — usually already on Windows 10/11. If the app window fails to open, install the [Evergreen WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+5. Optional but helpful: [Git for Windows](https://git-scm.com/download/win).
+
+Full Tauri notes: [Tauri 2 — Prerequisites (Windows)](https://v2.tauri.app/start/prerequisites/#windows).
+
+### macOS / Linux (secondary)
+
+- macOS: Xcode CLT + Rust + Node  
+- Linux: WebKitGTK 4.1 and related packages per [Tauri Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux)
 
 ---
 
-## Run locally (development)
+## Run on Windows (development)
 
-```bash
+In **PowerShell** or **Command Prompt**:
+
+```powershell
 git clone https://github.com/kenbrown-coder/rettmark-firearm.git
 cd rettmark-firearm
-git checkout cursor/ffl-bound-book-mvp-d014   # or pull the open PR branch
+git checkout cursor/ffl-bound-book-mvp-d014
 npm install
 npm run tauri:dev
 ```
 
-This starts the Vite UI and opens the Tauri desktop window. The SQLite file is created under the app data directory (shown in **Backup & license**).
+First `tauri:dev` compiles Rust and can take several minutes. A desktop window titled **Rettmark Firearms — A&D Bound Book** should open. The SQLite file lives under the Windows app data directory (path shown in **Backup & license**).
 
-Frontend-only (UI without native commands — useful for layout checks only):
+Frontend-only (layout only — native DB/backup commands will not work in a plain browser):
 
-```bash
+```powershell
 npm run dev
 ```
 
-Tests / build smoke:
+### Release build on Windows (on Ken’s PC)
 
-```bash
-npm test
-npm run build
-cd src-tauri && cargo test
+Cross-compiling Windows installers from Linux CI/this cloud agent is **not** how we ship for Ken. Build on the Windows machine:
+
+```powershell
+npm run tauri:build
 ```
 
-Production build:
+Artifacts typically land under:
 
-```bash
-npm run tauri:build
+`src-tauri\target\release\bundle\`  
+(e.g. `.msi` / NSIS `.exe` depending on Tauri bundle config)
+
+This cloud environment produced **Linux** `.deb` / `.rpm` / `.AppImage` only — use those for Linux smoke, not for the shop PC.
+
+### Tests / smoke
+
+```powershell
+npm test
+npm run build
+cd src-tauri
+cargo test
 ```
 
 ---
 
-## First 10 minutes (sample acquisition + disposition)
+## First 10 minutes
 
-1. Run `npm run tauri:dev` and wait for the window.
-2. On first launch, confirm **Rettmark Firearms**, enter your **FFL number**, leave **Forms 4473 filed numerically** checked, click **Open bound book**.
-3. Empty book → click **Add first acquisition**.
-4. Fill a sample receipt, for example:
-   - Manufacturer: `Glock`
-   - Model: `19`
-   - Serial: `DEMO-001`
-   - Type: `Pistol`
-   - Caliber: `9mm`
-   - Date: today
-   - From whom: **Licensee** — name `Sample Distributor`, FFL `1-XX-XXX-XX-XX-99999`
-5. Click **Commit acquisition line**. The bound book shows an **open** (highlighted) line.
-6. Click that line → **Record disposition** (or open **Disposition**).
-7. Keep **Form 4473 transaction #**, enter e.g. `4473-1001`, date today → **Record disposition**.
-8. Open **Inspection** for a read-only paper-style view; optionally **Export inspection package** (PDF + CSV + ASCII) to a folder.
-9. Click **Backup now** (or **Backup & license** → **Choose folder…**) and write an encrypted `.rfbk` to your Drive sync folder.
+### Fastest path (SAMPLE/DEMO)
 
-You now have one closed A&D line, an inspection view, and (if step 9 succeeded) an offsite encrypted copy.
+1. `npm run tauri:dev` and wait for the window.
+2. On first launch click **Try SAMPLE/DEMO book** (fictional FFL + lines — not a real record).
+3. Bound book shows open (highlighted) and disposed SAMPLE lines; banner says SAMPLE/DEMO.
+4. Click an **open** line → **Record disposition** (or browse **Disposition**).
+5. Open **Inspection** → optionally **Export inspection package** to a folder.
+6. **Backup now** → **Choose folder…** (OneDrive/Google Drive) → passphrase → backup.
+7. When finished exploring: **Wipe sample data** (banner or **Backup & license**).
+
+### Live book path
+
+1. Enter your real FFL profile → **Open bound book**.
+2. **Acquisition** → commit a receipt line (or start from empty-book CTA).
+3. Select open line → **Disposition** (4473 txn # by default when applicable).
+4. **Inspection** / export package; set backup folder and run encrypted backup.
+
+Do **not** mix SAMPLE/DEMO rows into a book that already has real lines — the app refuses to load demo into a non-sample book. Wipe sample first, or use a fresh install/profile.
 
 ---
 
@@ -126,11 +154,11 @@ A **Backup due** banner appears if there has never been a backup or the last one
 
 ## Typical workflow
 
-1. First launch → enter FFL / business profile  
+1. First launch → SAMPLE/DEMO **or** real FFL profile  
 2. **Acquisition** → add receipt lines  
 3. **Bound book** → select an open line → **Disposition**  
 4. Mistakes → **Correct** (original retained)  
-5. **Print / export** → PDF, print, CSV, or ASCII  
+5. **Inspection** / **Print / export** → package, PDF, CSV, or ASCII  
 6. **Backup & license** → encrypted copy to Drive folder  
 
 ---
@@ -142,17 +170,17 @@ A **Backup due** banner appears if there has never been a backup or the last one
 | Columns | Mirror § 478.125(e) description / receipt / disposition |
 | Corrections | Immutable original + linked correction entry; views: original / corrected / both |
 | Search | Serial, acq. date range, mfr/importer, name, address, 4473 txn # |
-| Download/print | PDF + CSV + ASCII; acquisition-date sort |
+| Download/print | PDF + CSV + ASCII; acquisition-date sort; inspection package |
 | Hosting | Local SQLite (premises); encrypted file backup ≠ live cloud host |
 | Partition | Single license / single user |
 
-Have counsel confirm your cutover plan (paper vs electronic going forward) before relying on this as the sole A&D record.
+Have counsel confirm your cutover plan before relying on this as the sole A&D record.
 
 ---
 
 ## Repository layout
 
 ```
-src/                 React UI (bound-book grid, forms, export)
-src-tauri/           Tauri shell, SQLite, backup encryption, CSV/ASCII export
+src/                 React UI (bound-book grid, forms, export, inspection)
+src-tauri/           Tauri shell, SQLite, backup encryption, CSV/ASCII export, sample demo
 ```

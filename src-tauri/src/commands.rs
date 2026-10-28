@@ -2,6 +2,7 @@ use crate::backup;
 use crate::db::AppDb;
 use crate::export;
 use crate::models::*;
+use crate::sample::{self, SampleDemoStatus};
 use chrono::{DateTime, Duration, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -389,5 +390,24 @@ pub fn list_entries_for_print(
             ..Default::default()
         })
         .map_err(|e| e.to_string())
+    })
+}
+
+#[tauri::command]
+pub fn get_sample_demo_status(state: State<'_, DbState>) -> Result<SampleDemoStatus, String> {
+    with_db(&state, |db| sample::status(db).map_err(|e| e.to_string()))
+}
+
+#[tauri::command]
+pub fn load_sample_demo(state: State<'_, DbState>) -> Result<SampleDemoStatus, String> {
+    with_db(&state, |db| {
+        sample::load_sample_demo(db).map_err(|e| e.to_string())
+    })
+}
+
+#[tauri::command]
+pub fn wipe_sample_demo(state: State<'_, DbState>) -> Result<SampleDemoStatus, String> {
+    with_db(&state, |db| {
+        sample::wipe_sample_demo(db).map_err(|e| e.to_string())
     })
 }

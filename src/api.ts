@@ -11,6 +11,7 @@ import type {
   License,
   LicenseInput,
   RestoreResult,
+  SampleDemoStatus,
   SearchQuery,
 } from "./types";
 
@@ -64,4 +65,7 @@ export const api = {
     invoke<BoundBookEntry[]>("list_entries_for_print", {
       correctionView: correctionView ?? "corrected",
     }),
+  getSampleDemoStatus: () => invoke<SampleDemoStatus>("get_sample_demo_status"),
+  loadSampleDemo: () => invoke<SampleDemoStatus>("load_sample_demo"),
+  wipeSampleDemo: () => invoke<SampleDemoStatus>("wipe_sample_demo"),
 };

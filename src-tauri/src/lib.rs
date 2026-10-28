@@ -5,6 +5,7 @@ mod db;
 mod db_tests;
 mod export;
 mod models;
+mod sample;
 
 use commands::DbState;
 use std::sync::Mutex;
@@ -36,6 +37,9 @@ pub fn run() {
             commands::export_inspection_package,
             commands::write_binary_file,
             commands::list_entries_for_print,
+            commands::get_sample_demo_status,
+            commands::load_sample_demo,
+            commands::wipe_sample_demo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

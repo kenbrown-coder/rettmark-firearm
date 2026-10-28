@@ -53,6 +53,8 @@ export default function App() {
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [acqFromKind, setAcqFromKind] = useState("licensee");
   const [dispToKind, setDispToKind] = useState("form_4473");
+  const [sampleLoaded, setSampleLoaded] = useState(false);
+  const [sampleCount, setSampleCount] = useState(0);
 
   const selected = useMemo(
     () => entries.find((e) => e.id === selectedId) ?? null,
@@ -72,15 +74,20 @@ export default function App() {
 
   const refresh = useCallback(
     async (q?: SearchQuery) => {
-      const [lic, list, backup] = await Promise.all([
+      const [lic, list, backup, sample] = await Promise.all([
         api.getLicense(),
         api.searchEntries(q ?? query),
         api.getBackupSettings().catch(() => null),
+        api.getSampleDemoStatus().catch(() => null),
       ]);
       setLicense(lic);
       setEntries(list);
       setOpenCount(list.filter((e) => e.status === "open" && e.isEffective).length);
       applyBackupSettings(backup);
+      if (sample) {
+        setSampleLoaded(sample.loaded);
+        setSampleCount(sample.sampleCount);
+      }
       if (!lic) setPanel("setup");
     },
     [query, applyBackupSettings],
@@ -390,6 +397,70 @@ export default function App() {
     }
   }
 
+  async function loadSampleDemo() {
+    setError(null);
+    try {
+      setBusy(true);
+      const status = await api.loadSampleDemo();
+      setSampleLoaded(status.loaded);
+      setSampleCount(status.sampleCount);
+      await refresh({ correctionView: "corrected" });
+      setPanel("book");
+      setNotice(
+        `Loaded ${status.sampleCount} SAMPLE/DEMO row(s) — fictional only. Open inventory, Inspection, or Export to click through; Wipe sample when done.`,
+      );
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function wipeSampleDemo() {
+    setError(null);
+    try {
+      setBusy(true);
+      const status = await api.wipeSampleDemo();
+      setSampleLoaded(status.loaded);
+      setSampleCount(status.sampleCount);
+      setSelectedId(null);
+      await refresh({ correctionView: "corrected" });
+      setNotice("SAMPLE/DEMO lines removed. License profile left in place.");
+      setPanel("book");
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startSampleDemoProfile() {
+    setError(null);
+    try {
+      setBusy(true);
+      await api.saveLicense({
+        fflNumber: "DEMO-NOT-A-REAL-FFL",
+        businessName: "Rettmark Firearms (SAMPLE/DEMO)",
+        premisesNotes:
+          "SAMPLE/DEMO license profile — replace with real FFL before production use",
+        forms4473FiledNumerically: true,
+        operatorName: "Ken Brown",
+      });
+      const status = await api.loadSampleDemo();
+      setSampleLoaded(status.loaded);
+      setSampleCount(status.sampleCount);
+      await refresh({ correctionView: "corrected" });
+      setPanel("book");
+      setNotice(
+        "SAMPLE/DEMO book ready: 2 open lines, disposed lines, and one correction. Not a real A&D record.",
+      );
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveBackupSettings(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -503,13 +574,27 @@ export default function App() {
             (§ 478.125(e)). One license, one user, records stay on this computer.
           </p>
           <ol className="setup-steps">
-            <li>Enter your FFL profile below</li>
-            <li>Add acquisition (receipt) lines like the paper book</li>
-            <li>Fill disposition when a firearm leaves inventory</li>
-            <li>Pick a Drive sync folder and run an encrypted backup</li>
+            <li>
+              Fastest: <strong>Try SAMPLE/DEMO book</strong> (fictional lines — wipe anytime)
+            </li>
+            <li>Or enter your real FFL profile below and add live acquisitions</li>
+            <li>Use Inspection + Export package, then Backup to your Drive folder</li>
           </ol>
           {error && <div className="status-line error">{error}</div>}
-          <form onSubmit={handleSetup} className="form-grid" style={{ marginTop: "1.25rem" }}>
+          <div className="form-actions" style={{ marginTop: "1rem" }}>
+            <button
+              className="btn"
+              type="button"
+              disabled={busy}
+              onClick={() => void startSampleDemoProfile()}
+            >
+              Try SAMPLE/DEMO book
+            </button>
+          </div>
+          <p className="lede" style={{ marginTop: "1rem" }}>
+            Or set up your real license profile:
+          </p>
+          <form onSubmit={handleSetup} className="form-grid" style={{ marginTop: "0.5rem" }}>
             <div className="field wide">
               <label htmlFor="businessName">Business name</label>
               <input
@@ -609,6 +694,32 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {sampleLoaded && (
+        <div className="sample-banner no-print" role="status">
+          <div>
+            <strong>SAMPLE/DEMO data loaded</strong> ({sampleCount} row(s)). Fictional serials and
+            FFLs only — not a real A&amp;D record. Wipe before entering production lines.
+          </div>
+          <div className="backup-banner-actions">
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => void openInspection()}
+            >
+              Inspection
+            </button>
+            <button
+              type="button"
+              className="btn danger"
+              disabled={busy}
+              onClick={() => void wipeSampleDemo()}
+            >
+              Wipe sample data
+            </button>
+          </div>
+        </div>
+      )}
 
       {backupDue && (
         <div className="backup-banner no-print" role="status">
@@ -780,11 +891,20 @@ export default function App() {
               <div className="empty-book no-print">
                 <h3>Book is empty</h3>
                 <p>
-                  Start like the paper book: record a receipt (acquisition) with manufacturer,
-                  model, serial, type, caliber, date, and from whom received.
+                  Load a few fictional SAMPLE/DEMO lines to click through open inventory,
+                  disposition, inspection, and export — or enter a real acquisition like the paper
+                  book.
                 </p>
                 <div className="form-actions">
-                  <button className="btn" type="button" onClick={() => setPanel("acquire")}>
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void loadSampleDemo()}
+                  >
+                    Load SAMPLE/DEMO book
+                  </button>
+                  <button className="btn secondary" type="button" onClick={() => setPanel("acquire")}>
                     Add first acquisition
                   </button>
                   <button
@@ -822,6 +942,7 @@ export default function App() {
                           e.status === "open" && e.isEffective ? "open" : "",
                           !e.isEffective ? "superseded" : "",
                           selectedId === e.id ? "selected" : "",
+                          e.serialNumber.startsWith("SAMPLE-") ? "sample-row" : "",
                         ]
                           .filter(Boolean)
                           .join(" ")}
@@ -1288,6 +1409,31 @@ export default function App() {
               a folder you choose (OneDrive or Google Drive sync folder). Encrypt in-app before the
               file lands in the sync folder.
             </p>
+
+            <h3 className="subhead">SAMPLE/DEMO book</h3>
+            <p className="lede">
+              One-click fictional A&amp;D lines (serials prefixed <code>SAMPLE-</code>, fake FFLs).
+              Includes open inventory, 4473 disposition, licensee transfer, and a correction. Will
+              not load into a book that already has non-sample lines.
+            </p>
+            <div className="form-actions">
+              <button
+                className="btn secondary"
+                type="button"
+                disabled={busy}
+                onClick={() => void loadSampleDemo()}
+              >
+                {sampleLoaded ? "Reload SAMPLE/DEMO book" : "Load SAMPLE/DEMO book"}
+              </button>
+              <button
+                className="btn danger"
+                type="button"
+                disabled={busy || !sampleLoaded}
+                onClick={() => void wipeSampleDemo()}
+              >
+                Wipe sample data
+              </button>
+            </div>
             <form onSubmit={saveBackupSettings}>
               <div className="form-grid">
                 <div className="field wide">

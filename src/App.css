@@ -293,6 +293,14 @@ button {
   outline-offset: -2px;
 }
 
+.book-table tbody tr.sample-row td:first-child::after {
+  content: " DEMO";
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #5a7ea3;
+  letter-spacing: 0.04em;
+}
+
 .book-table tbody tr.superseded td {
   opacity: 0.55;
   text-decoration: line-through;
@@ -395,6 +403,19 @@ button {
   background: #f3e0c8;
   border-bottom: 1px solid #c48a4a;
   color: #3b2a16;
+  font-size: 0.92rem;
+}
+
+.sample-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1.5rem;
+  background: #e4eef8;
+  border-bottom: 1px solid #5a7ea3;
+  color: #1c3348;
   font-size: 0.92rem;
 }
 
