@@ -125,6 +125,50 @@ mod tests {
     }
 
     #[test]
+    fn disposition_before_acquisition_allowed_as_soft_case() {
+        let db = temp_db();
+        db.upsert_license(LicenseInput {
+            ffl_number: "DEMO-NOT-A-REAL-FFL".into(),
+            business_name: "Rettmark Firearms (SAMPLE/DEMO)".into(),
+            premises_notes: None,
+            forms_4473_filed_numerically: true,
+            operator_name: "Ken Brown".into(),
+        })
+        .unwrap();
+        let acq = db
+            .add_acquisition(AcquisitionInput {
+                manufacturer: "Glock".into(),
+                importer: None,
+                model: "19".into(),
+                serial_number: "SOFT-DATE-1".into(),
+                firearm_type: "Pistol".into(),
+                caliber_or_gauge: "9mm".into(),
+                acquisition_date: "2026-10-10".into(),
+                acquired_from_kind: "opening_inventory".into(),
+                acquired_from_name: "Opening".into(),
+                acquired_from_address: None,
+                acquired_from_ffl: None,
+                notes: None,
+            })
+            .unwrap();
+        let disposed = db
+            .record_disposition(DispositionInput {
+                entry_id: acq.id,
+                disposition_date: "2026-10-01".into(),
+                disposed_to_kind: "form_4473".into(),
+                disposed_to_name: None,
+                disposed_to_address: None,
+                disposed_to_ffl: None,
+                form_4473_transaction_number: Some("4473-soft".into()),
+                disposition_reference: None,
+                notes: None,
+            })
+            .unwrap();
+        assert_eq!(disposed.status, "disposed");
+        assert_eq!(disposed.disposition_date.as_deref(), Some("2026-10-01"));
+    }
+
+    #[test]
     fn sample_demo_load_and_wipe() {
         let db = temp_db();
         let loaded = crate::sample::load_sample_demo(&db).unwrap();

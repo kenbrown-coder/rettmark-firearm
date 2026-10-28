@@ -394,6 +394,16 @@ pub fn list_entries_for_print(
 }
 
 #[tauri::command]
+pub fn find_open_by_serial(
+    state: State<'_, DbState>,
+    serial: String,
+) -> Result<Vec<BoundBookEntry>, String> {
+    with_db(&state, |db| {
+        db.find_open_by_serial(&serial).map_err(|e| e.to_string())
+    })
+}
+
+#[tauri::command]
 pub fn get_sample_demo_status(state: State<'_, DbState>) -> Result<SampleDemoStatus, String> {
     with_db(&state, |db| sample::status(db).map_err(|e| e.to_string()))
 }

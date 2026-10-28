@@ -65,6 +65,8 @@ export const api = {
     invoke<BoundBookEntry[]>("list_entries_for_print", {
       correctionView: correctionView ?? "corrected",
     }),
+  findOpenBySerial: (serial: string) =>
+    invoke<BoundBookEntry[]>("find_open_by_serial", { serial }),
   getSampleDemoStatus: () => invoke<SampleDemoStatus>("get_sample_demo_status"),
   loadSampleDemo: () => invoke<SampleDemoStatus>("load_sample_demo"),
   wipeSampleDemo: () => invoke<SampleDemoStatus>("wipe_sample_demo"),

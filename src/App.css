@@ -201,6 +201,40 @@ button {
   flex: 2;
 }
 
+.field.has-error input,
+.field.has-error select,
+.field.has-error textarea {
+  border-color: var(--danger);
+  background: #fff7f7;
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.soft-warnings {
+  margin: 0.75rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border-left: 3px solid #c48a4a;
+  background: #f8ecd9;
+  color: #3b2a16;
+  font-size: 0.9rem;
+}
+
+.soft-warnings ul {
+  margin: 0.35rem 0 0.6rem;
+  padding-left: 1.1rem;
+}
+
+.soft-warnings label {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  font-weight: 600;
+}
+
 .btn {
   border: 1px solid var(--rule-strong);
   background: var(--accent);

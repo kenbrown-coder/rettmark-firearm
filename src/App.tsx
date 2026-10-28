@@ -1,6 +1,14 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, formatFromWhom, formatToWhom } from "./api";
+import {
+  acquisitionWarnings,
+  dispositionWarnings,
+  hasErrors,
+  type FieldErrors,
+  validateAcquisition,
+  validateDisposition,
+} from "./entryValidation";
 import { InspectionView } from "./InspectionView";
 import { buildBoundBookPdf } from "./printPdf";
 import type {
@@ -10,6 +18,16 @@ import type {
   SearchQuery,
 } from "./types";
 import "./App.css";
+
+function FieldError({ errors, name }: { errors: FieldErrors; name: string }) {
+  const msg = errors[name];
+  if (!msg) return null;
+  return <span className="field-error">{msg}</span>;
+}
+
+function fieldClass(errors: FieldErrors, name: string, extra = "") {
+  return ["field", extra, errors[name] ? "has-error" : ""].filter(Boolean).join(" ");
+}
 
 const FIREARM_TYPES = [
   "Pistol",
@@ -55,6 +73,12 @@ export default function App() {
   const [dispToKind, setDispToKind] = useState("form_4473");
   const [sampleLoaded, setSampleLoaded] = useState(false);
   const [sampleCount, setSampleCount] = useState(0);
+  const [acqErrors, setAcqErrors] = useState<FieldErrors>({});
+  const [dispErrors, setDispErrors] = useState<FieldErrors>({});
+  const [acqWarnings, setAcqWarnings] = useState<string[]>([]);
+  const [dispWarnings, setDispWarnings] = useState<string[]>([]);
+  const [acqWarnAck, setAcqWarnAck] = useState(false);
+  const [dispWarnAck, setDispWarnAck] = useState(false);
 
   const selected = useMemo(
     () => entries.find((e) => e.id === selectedId) ?? null,
@@ -189,29 +213,64 @@ export default function App() {
 
   async function handleAcquire(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const values = {
+      manufacturer: String(fd.get("manufacturer") || ""),
+      model: String(fd.get("model") || ""),
+      serialNumber: String(fd.get("serialNumber") || ""),
+      firearmType: String(fd.get("firearmType") || ""),
+      caliberOrGauge: String(fd.get("caliberOrGauge") || ""),
+      acquisitionDate: String(fd.get("acquisitionDate") || ""),
+      acquiredFromKind: String(fd.get("acquiredFromKind") || acqFromKind),
+      acquiredFromName: String(fd.get("acquiredFromName") || ""),
+      acquiredFromAddress: String(fd.get("acquiredFromAddress") || ""),
+      acquiredFromFfl: String(fd.get("acquiredFromFfl") || ""),
+    };
+    const errors = validateAcquisition(values);
+    setAcqErrors(errors);
+    if (hasErrors(errors)) {
+      setError("Fix required fields before saving the acquisition line.");
+      return;
+    }
+
     setError(null);
     try {
       setBusy(true);
+      const dupes = await api.findOpenBySerial(values.serialNumber);
+      const warnings = acquisitionWarnings(
+        values,
+        dupes.map((d) => `line ${d.lineNumber}`),
+      );
+      setAcqWarnings(warnings);
+      if (warnings.length > 0 && !acqWarnAck) {
+        setError(null);
+        setNotice(null);
+        return;
+      }
+
       const entry = await api.addAcquisition({
-        manufacturer: String(fd.get("manufacturer") || ""),
+        manufacturer: values.manufacturer,
         importer: String(fd.get("importer") || "") || null,
-        model: String(fd.get("model") || ""),
-        serialNumber: String(fd.get("serialNumber") || ""),
-        firearmType: String(fd.get("firearmType") || ""),
-        caliberOrGauge: String(fd.get("caliberOrGauge") || ""),
-        acquisitionDate: String(fd.get("acquisitionDate") || ""),
-        acquiredFromKind: String(fd.get("acquiredFromKind") || ""),
-        acquiredFromName: String(fd.get("acquiredFromName") || ""),
-        acquiredFromAddress: String(fd.get("acquiredFromAddress") || "") || null,
-        acquiredFromFfl: String(fd.get("acquiredFromFfl") || "") || null,
+        model: values.model,
+        serialNumber: values.serialNumber,
+        firearmType: values.firearmType,
+        caliberOrGauge: values.caliberOrGauge,
+        acquisitionDate: values.acquisitionDate,
+        acquiredFromKind: values.acquiredFromKind,
+        acquiredFromName: values.acquiredFromName,
+        acquiredFromAddress: values.acquiredFromAddress || null,
+        acquiredFromFfl: values.acquiredFromFfl || null,
         notes: String(fd.get("notes") || "") || null,
       });
       setSelectedId(entry.id);
+      setAcqErrors({});
+      setAcqWarnings([]);
+      setAcqWarnAck(false);
       setNotice(
         `Line ${entry.lineNumber} acquired. When sold, select it and open Disposition.`,
       );
-      e.currentTarget.reset();
+      form.reset();
       setAcqFromKind("licensee");
       await refresh();
       setPanel("book");
@@ -229,21 +288,47 @@ export default function App() {
       return;
     }
     const fd = new FormData(e.currentTarget);
+    const values = {
+      dispositionDate: String(fd.get("dispositionDate") || ""),
+      disposedToKind: String(fd.get("disposedToKind") || dispToKind),
+      disposedToName: String(fd.get("disposedToName") || ""),
+      disposedToAddress: String(fd.get("disposedToAddress") || ""),
+      disposedToFfl: String(fd.get("disposedToFfl") || ""),
+      form4473TransactionNumber: String(fd.get("form4473TransactionNumber") || ""),
+      dispositionReference: String(fd.get("dispositionReference") || ""),
+      acquisitionDate: selected.acquisitionDate,
+    };
+    const errors = validateDisposition(values);
+    setDispErrors(errors);
+    if (hasErrors(errors)) {
+      setError("Fix required disposition fields before saving.");
+      return;
+    }
+
+    const warnings = dispositionWarnings(values);
+    setDispWarnings(warnings);
+    if (warnings.length > 0 && !dispWarnAck) {
+      setError(null);
+      return;
+    }
+
     setError(null);
     try {
       setBusy(true);
       await api.recordDisposition({
         entryId: selected.id,
-        dispositionDate: String(fd.get("dispositionDate") || ""),
-        disposedToKind: String(fd.get("disposedToKind") || ""),
-        disposedToName: String(fd.get("disposedToName") || "") || null,
-        disposedToAddress: String(fd.get("disposedToAddress") || "") || null,
-        disposedToFfl: String(fd.get("disposedToFfl") || "") || null,
-        form4473TransactionNumber:
-          String(fd.get("form4473TransactionNumber") || "") || null,
-        dispositionReference: String(fd.get("dispositionReference") || "") || null,
+        dispositionDate: values.dispositionDate,
+        disposedToKind: values.disposedToKind,
+        disposedToName: values.disposedToName || null,
+        disposedToAddress: values.disposedToAddress || null,
+        disposedToFfl: values.disposedToFfl || null,
+        form4473TransactionNumber: values.form4473TransactionNumber || null,
+        dispositionReference: values.dispositionReference || null,
         notes: String(fd.get("notes") || "") || null,
       });
+      setDispErrors({});
+      setDispWarnings([]);
+      setDispWarnAck(false);
       setNotice(`Disposition recorded on line ${selected.lineNumber}.`);
       await refresh();
       setPanel("book");
@@ -1009,68 +1094,91 @@ export default function App() {
               Enter description of firearm and from whom received. Due by close of next business
               day (or up to 7 days with a qualifying commercial record).
             </p>
-            <form onSubmit={handleAcquire}>
+            <form
+              onSubmit={handleAcquire}
+              onChange={() => {
+                if (Object.keys(acqErrors).length) setAcqErrors({});
+                if (acqWarnings.length) {
+                  setAcqWarnings([]);
+                  setAcqWarnAck(false);
+                }
+              }}
+            >
               <div className="form-grid">
-                <div className="field">
+                <div className={fieldClass(acqErrors, "manufacturer")}>
                   <label>Manufacturer (or PMF)</label>
-                  <input name="manufacturer" required placeholder="or privately made firearm" />
+                  <input name="manufacturer" placeholder="or privately made firearm" />
+                  <FieldError errors={acqErrors} name="manufacturer" />
                 </div>
                 <div className="field">
                   <label>Importer (if any)</label>
                   <input name="importer" />
                 </div>
-                <div className="field">
+                <div className={fieldClass(acqErrors, "model")}>
                   <label>Model</label>
-                  <input name="model" required />
+                  <input name="model" />
+                  <FieldError errors={acqErrors} name="model" />
                 </div>
-                <div className="field">
+                <div className={fieldClass(acqErrors, "serialNumber")}>
                   <label>Serial No.</label>
-                  <input name="serialNumber" required className="serial" />
+                  <input name="serialNumber" className="serial" />
+                  <FieldError errors={acqErrors} name="serialNumber" />
                 </div>
-                <div className="field">
+                <div className={fieldClass(acqErrors, "firearmType")}>
                   <label>Type</label>
-                  <select name="firearmType" required defaultValue="Pistol">
+                  <select name="firearmType" defaultValue="Pistol">
                     {FIREARM_TYPES.map((t) => (
                       <option key={t}>{t}</option>
                     ))}
                   </select>
+                  <FieldError errors={acqErrors} name="firearmType" />
                 </div>
-                <div className="field">
+                <div className={fieldClass(acqErrors, "caliberOrGauge")}>
                   <label>Caliber or gauge</label>
-                  <input name="caliberOrGauge" required />
+                  <input name="caliberOrGauge" />
+                  <FieldError errors={acqErrors} name="caliberOrGauge" />
                 </div>
-                <div className="field">
+                <div className={fieldClass(acqErrors, "acquisitionDate")}>
                   <label>Date of receipt</label>
-                  <input name="acquisitionDate" type="date" required defaultValue={todayISO()} />
+                  <input name="acquisitionDate" type="date" defaultValue={todayISO()} />
+                  <FieldError errors={acqErrors} name="acquisitionDate" />
                 </div>
-                <div className="field">
+                <div className={fieldClass(acqErrors, "acquiredFromKind")}>
                   <label>From whom (kind)</label>
                   <select
                     name="acquiredFromKind"
-                    required
                     value={acqFromKind}
-                    onChange={(e) => setAcqFromKind(e.target.value)}
+                    onChange={(e) => {
+                      setAcqFromKind(e.target.value);
+                      setAcqErrors({});
+                      setAcqWarnings([]);
+                      setAcqWarnAck(false);
+                    }}
                   >
                     <option value="nonlicensee">Nonlicensee (name + address)</option>
                     <option value="licensee">Licensee (name + FFL)</option>
                     <option value="opening_inventory">Opening inventory</option>
                     <option value="other">Other</option>
                   </select>
+                  <FieldError errors={acqErrors} name="acquiredFromKind" />
                 </div>
-                <div className="field wide">
+                <div className={fieldClass(acqErrors, "acquiredFromName", "wide")}>
                   <label>Name</label>
-                  <input name="acquiredFromName" required />
+                  <input name="acquiredFromName" />
+                  <FieldError errors={acqErrors} name="acquiredFromName" />
                 </div>
                 {(acqFromKind === "nonlicensee" || acqFromKind === "other") && (
-                  <div className="field wide">
+                  <div className={fieldClass(acqErrors, "acquiredFromAddress", "wide")}>
                     <label>Address (required for nonlicensee)</label>
-                    <input name="acquiredFromAddress" required={acqFromKind === "nonlicensee"} />
+                    <input name="acquiredFromAddress" />
+                    <FieldError errors={acqErrors} name="acquiredFromAddress" />
                   </div>
                 )}
                 {(acqFromKind === "licensee" || acqFromKind === "other") && (
-                  <div className="field">
+                  <div className={fieldClass(acqErrors, "acquiredFromFfl")}>
                     <label>FFL number (required for licensee)</label>
-                    <input name="acquiredFromFfl" required={acqFromKind === "licensee"} />
+                    <input name="acquiredFromFfl" />
+                    <FieldError errors={acqErrors} name="acquiredFromFfl" />
                   </div>
                 )}
                 {acqFromKind === "opening_inventory" && (
@@ -1084,8 +1192,30 @@ export default function App() {
                   <input name="notes" />
                 </div>
               </div>
+              {acqWarnings.length > 0 && (
+                <div className="soft-warnings">
+                  <strong>Soft warning — review before saving</strong>
+                  <ul>
+                    {acqWarnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={acqWarnAck}
+                      onChange={(e) => setAcqWarnAck(e.target.checked)}
+                    />
+                    I reviewed the warning(s) — save anyway
+                  </label>
+                </div>
+              )}
               <div className="form-actions">
-                <button className="btn" type="submit" disabled={busy}>
+                <button
+                  className="btn"
+                  type="submit"
+                  disabled={busy || (acqWarnings.length > 0 && !acqWarnAck)}
+                >
                   Commit acquisition line
                 </button>
               </div>
@@ -1116,24 +1246,37 @@ export default function App() {
                   Line {selected.lineNumber}: {selected.manufacturer} {selected.model} ·{" "}
                   <span className="serial">{selected.serialNumber}</span>
                 </div>
-                <form onSubmit={handleDispose}>
+                <form
+                  onSubmit={handleDispose}
+                  onChange={() => {
+                    if (Object.keys(dispErrors).length) setDispErrors({});
+                    if (dispWarnings.length) {
+                      setDispWarnings([]);
+                      setDispWarnAck(false);
+                    }
+                  }}
+                >
                   <div className="form-grid">
-                    <div className="field">
+                    <div className={fieldClass(dispErrors, "dispositionDate")}>
                       <label>Date of disposition</label>
                       <input
                         name="dispositionDate"
                         type="date"
-                        required
                         defaultValue={todayISO()}
                       />
+                      <FieldError errors={dispErrors} name="dispositionDate" />
                     </div>
-                    <div className="field">
+                    <div className={fieldClass(dispErrors, "disposedToKind")}>
                       <label>To whom (kind)</label>
                       <select
                         name="disposedToKind"
-                        required
                         value={dispToKind}
-                        onChange={(e) => setDispToKind(e.target.value)}
+                        onChange={(e) => {
+                          setDispToKind(e.target.value);
+                          setDispErrors({});
+                          setDispWarnings([]);
+                          setDispWarnAck(false);
+                        }}
                       >
                         <option value="form_4473">Form 4473 transaction #</option>
                         <option value="nonlicensee">Nonlicensee (name + address)</option>
@@ -1141,43 +1284,43 @@ export default function App() {
                         <option value="book_rollover_ref">Book rollover reference</option>
                         <option value="other">Other</option>
                       </select>
+                      <FieldError errors={dispErrors} name="disposedToKind" />
                     </div>
                     {dispToKind === "form_4473" && (
-                      <div className="field">
+                      <div className={fieldClass(dispErrors, "form4473TransactionNumber")}>
                         <label>4473 transaction No.</label>
-                        <input name="form4473TransactionNumber" required />
+                        <input name="form4473TransactionNumber" />
+                        <FieldError errors={dispErrors} name="form4473TransactionNumber" />
                       </div>
                     )}
                     {(dispToKind === "nonlicensee" ||
                       dispToKind === "licensee" ||
                       dispToKind === "other") && (
-                      <div className="field">
+                      <div className={fieldClass(dispErrors, "disposedToName")}>
                         <label>Name</label>
-                        <input
-                          name="disposedToName"
-                          required={dispToKind === "nonlicensee" || dispToKind === "licensee"}
-                        />
+                        <input name="disposedToName" />
+                        <FieldError errors={dispErrors} name="disposedToName" />
                       </div>
                     )}
                     {(dispToKind === "nonlicensee" || dispToKind === "other") && (
-                      <div className="field wide">
+                      <div className={fieldClass(dispErrors, "disposedToAddress", "wide")}>
                         <label>Address</label>
-                        <input
-                          name="disposedToAddress"
-                          required={dispToKind === "nonlicensee"}
-                        />
+                        <input name="disposedToAddress" />
+                        <FieldError errors={dispErrors} name="disposedToAddress" />
                       </div>
                     )}
                     {(dispToKind === "licensee" || dispToKind === "other") && (
-                      <div className="field">
+                      <div className={fieldClass(dispErrors, "disposedToFfl")}>
                         <label>FFL number</label>
-                        <input name="disposedToFfl" required={dispToKind === "licensee"} />
+                        <input name="disposedToFfl" />
+                        <FieldError errors={dispErrors} name="disposedToFfl" />
                       </div>
                     )}
                     {dispToKind === "book_rollover_ref" && (
-                      <div className="field wide">
+                      <div className={fieldClass(dispErrors, "dispositionReference", "wide")}>
                         <label>Rollover reference</label>
-                        <input name="dispositionReference" required />
+                        <input name="dispositionReference" />
+                        <FieldError errors={dispErrors} name="dispositionReference" />
                       </div>
                     )}
                     <div className="field wide">
@@ -1185,8 +1328,30 @@ export default function App() {
                       <input name="notes" />
                     </div>
                   </div>
+                  {dispWarnings.length > 0 && (
+                    <div className="soft-warnings">
+                      <strong>Soft warning — review before saving</strong>
+                      <ul>
+                        {dispWarnings.map((w) => (
+                          <li key={w}>{w}</li>
+                        ))}
+                      </ul>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={dispWarnAck}
+                          onChange={(e) => setDispWarnAck(e.target.checked)}
+                        />
+                        I reviewed the warning(s) — save anyway
+                      </label>
+                    </div>
+                  )}
                   <div className="form-actions">
-                    <button className="btn" type="submit" disabled={busy}>
+                    <button
+                      className="btn"
+                      type="submit"
+                      disabled={busy || (dispWarnings.length > 0 && !dispWarnAck)}
+                    >
                       Record disposition
                     </button>
                   </div>

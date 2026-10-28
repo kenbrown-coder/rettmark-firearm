@@ -37,6 +37,7 @@ pub fn run() {
             commands::export_inspection_package,
             commands::write_binary_file,
             commands::list_entries_for_print,
+            commands::find_open_by_serial,
             commands::get_sample_demo_status,
             commands::load_sample_demo,
             commands::wipe_sample_demo,

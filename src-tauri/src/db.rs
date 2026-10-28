@@ -442,15 +442,26 @@ impl AppDb {
     }
 
     fn validate_acquisition(&self, input: &AcquisitionInput) -> Result<()> {
-        if input.manufacturer.trim().is_empty()
-            || input.model.trim().is_empty()
-            || input.serial_number.trim().is_empty()
-            || input.firearm_type.trim().is_empty()
-            || input.caliber_or_gauge.trim().is_empty()
-            || input.acquisition_date.trim().is_empty()
-            || input.acquired_from_name.trim().is_empty()
-        {
-            bail!("Required acquisition fields are missing");
+        if input.manufacturer.trim().is_empty() {
+            bail!("Manufacturer is required (or “privately made firearm” / PMF)");
+        }
+        if input.model.trim().is_empty() {
+            bail!("Model is required");
+        }
+        if input.serial_number.trim().is_empty() {
+            bail!("Serial number is required");
+        }
+        if input.firearm_type.trim().is_empty() {
+            bail!("Type is required");
+        }
+        if input.caliber_or_gauge.trim().is_empty() {
+            bail!("Caliber or gauge is required");
+        }
+        if input.acquisition_date.trim().is_empty() {
+            bail!("Date of receipt is required");
+        }
+        if input.acquired_from_name.trim().is_empty() {
+            bail!("Name (from whom received) is required");
         }
         match input.acquired_from_kind.as_str() {
             "nonlicensee" => {
@@ -492,9 +503,7 @@ impl AppDb {
         if input.disposition_date.trim().is_empty() {
             bail!("Disposition date is required");
         }
-        if input.disposition_date < existing.acquisition_date {
-            bail!("Disposition date cannot be before acquisition date");
-        }
+        // Disposition-before-acquisition is a soft warning in the UI (unusual, not blocked).
         match input.disposed_to_kind.as_str() {
             "nonlicensee" => {
                 if input
@@ -512,6 +521,14 @@ impl AppDb {
                 }
             }
             "licensee" => {
+                if input
+                    .disposed_to_name
+                    .as_ref()
+                    .map(|s| s.trim().is_empty())
+                    .unwrap_or(true)
+                {
+                    bail!("Licensee disposition requires name");
+                }
                 if input
                     .disposed_to_ffl
                     .as_ref()
@@ -546,6 +563,7 @@ impl AppDb {
         }
 
         let actor = self.operator_name();
+        let date_warning = input.disposition_date.trim() < existing.acquisition_date.as_str();
         {
             let conn = self.conn.lock().unwrap();
             conn.execute(
@@ -575,14 +593,45 @@ impl AppDb {
         }
         // Note: disposition fills blank columns on the same line (like paper).
         // Corrections that change content use method (a) via correct_entry.
+        let detail = if date_warning {
+            Some(format!(
+                "{{\"warning\":\"disposition_before_acquisition\",\"acq\":\"{}\",\"disp\":\"{}\"}}",
+                existing.acquisition_date,
+                input.disposition_date.trim()
+            ))
+        } else {
+            None
+        };
         self.audit(
             "record_disposition",
             "bound_book_entry",
             Some(input.entry_id),
-            None,
+            detail.as_deref(),
             &actor,
         )?;
         self.get_entry(input.entry_id)?.context("entry missing")
+    }
+
+    /// Effective open lines with the same serial (case-sensitive trim match).
+    pub fn find_open_by_serial(&self, serial: &str) -> Result<Vec<BoundBookEntry>> {
+        let serial = serial.trim();
+        if serial.is_empty() {
+            return Ok(vec![]);
+        }
+        let conn = self.conn.lock().unwrap();
+        let sql = format!(
+            "SELECT {} FROM bound_book_entry
+             WHERE is_effective = 1 AND status = 'open' AND serial_number = ?1
+             ORDER BY line_number ASC",
+            Self::ENTRY_COLS
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![serial], Self::map_entry)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
     }
 
     pub fn correct_entry(&self, input: CorrectionInput) -> Result<BoundBookEntry> {
