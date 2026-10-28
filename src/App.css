@@ -364,6 +364,138 @@ button {
   border-top: 1px solid var(--rule);
 }
 
+.setup-steps {
+  margin: 1rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--ink-muted);
+}
+
+.setup-steps li {
+  margin: 0.35rem 0;
+}
+
+.checkbox-label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.backup-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1.5rem;
+  background: #f3e0c8;
+  border-bottom: 1px solid #c48a4a;
+  color: #3b2a16;
+  font-size: 0.92rem;
+}
+
+.backup-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.empty-book {
+  border: 1px dashed var(--rule-strong);
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.empty-book h3 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-brand);
+}
+
+.empty-book p {
+  margin: 0 0 1rem;
+  color: var(--ink-muted);
+  max-width: 36rem;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  background: rgba(42, 90, 60, 0.08);
+  border-left: 3px solid var(--accent);
+}
+
+.path-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.path-row input {
+  flex: 1;
+  border: 1px solid var(--rule);
+  background: #fff;
+  padding: 0.45rem 0.55rem;
+  border-radius: 3px;
+}
+
+.subhead {
+  margin: 1.75rem 0 0.35rem;
+  font-family: var(--font-brand);
+  font-size: 1.15rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(21, 36, 28, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  padding: 1rem;
+}
+
+.modal {
+  width: min(420px, 100%);
+  background: var(--ledger);
+  border: 1px solid var(--rule-strong);
+  box-shadow: var(--shadow);
+  padding: 1.25rem 1.35rem 1.4rem;
+}
+
+.modal h2 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-brand);
+  font-size: 1.3rem;
+}
+
+.modal p {
+  margin: 0 0 1rem;
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+}
+
+.modal .field {
+  margin-bottom: 0.75rem;
+}
+
+button.linkish {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+  padding: 0;
+  text-decoration: underline;
+}
+
 @media print {
   body {
     background: #fff;

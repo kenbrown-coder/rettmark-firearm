@@ -2,8 +2,9 @@ use crate::backup;
 use crate::db::AppDb;
 use crate::export;
 use crate::models::*;
-use chrono::Utc;
-use std::path::PathBuf;
+use chrono::{DateTime, Duration, Utc};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
@@ -26,6 +27,23 @@ fn default_db_path(app: &AppHandle) -> Result<PathBuf, String> {
         .app_data_dir()
         .map_err(|e| e.to_string())?;
     Ok(dir.join("bound-book.sqlite"))
+}
+
+fn backup_is_due(last_backup_at: &Option<String>) -> bool {
+    match last_backup_at {
+        None => true,
+        Some(s) => match DateTime::parse_from_rfc3339(s) {
+            Ok(dt) => Utc::now() - dt.with_timezone(&Utc) > Duration::hours(24),
+            Err(_) => true,
+        },
+    }
+}
+
+fn remove_sidecar_files(db_path: &Path) {
+    let wal = PathBuf::from(format!("{}-wal", db_path.display()));
+    let shm = PathBuf::from(format!("{}-shm", db_path.display()));
+    let _ = fs::remove_file(wal);
+    let _ = fs::remove_file(shm);
 }
 
 #[tauri::command]
@@ -121,17 +139,20 @@ pub fn get_backup_settings(state: State<'_, DbState>) -> Result<BackupSettings, 
             .get_setting("backup_passphrase_hash")
             .map_err(|e| e.to_string())?
             .is_some();
+        let last_backup_at = db
+            .get_setting("last_backup_at")
+            .map_err(|e| e.to_string())?;
+        let backup_due = backup_is_due(&last_backup_at);
         Ok(BackupSettings {
             passphrase_set,
             backup_folder: db
                 .get_setting("backup_folder")
                 .map_err(|e| e.to_string())?,
-            last_backup_at: db
-                .get_setting("last_backup_at")
-                .map_err(|e| e.to_string())?,
+            last_backup_at,
             last_atf_export_at: db
                 .get_setting("last_atf_export_at")
                 .map_err(|e| e.to_string())?,
+            backup_due,
         })
     })
 }
@@ -186,6 +207,8 @@ pub fn run_encrypted_backup(
             .map_err(|e| e.to_string())?;
         db.set_setting("last_backup_at", &created_at)
             .map_err(|e| e.to_string())?;
+        db.set_setting("backup_passphrase_hash", "configured")
+            .map_err(|e| e.to_string())?;
         db.record_export(
             "backup",
             &dest.display().to_string(),
@@ -198,6 +221,121 @@ pub fn run_encrypted_backup(
             created_at,
             bytes,
         })
+    })
+}
+
+/// Decrypt a `.rfbk` backup and replace the live DB.
+/// Safety: current live DB is copied beside it before replacement.
+#[tauri::command]
+pub fn restore_from_backup(
+    state: State<'_, DbState>,
+    app: AppHandle,
+    backup_path: String,
+    passphrase: String,
+) -> Result<RestoreResult, String> {
+    if passphrase.trim().len() < 8 {
+        return Err("Passphrase must be at least 8 characters".into());
+    }
+    let backup_path = PathBuf::from(backup_path.trim());
+    if !backup_path.exists() {
+        return Err("Backup file not found".into());
+    }
+
+    let live_path = {
+        let guard = state.0.lock().map_err(|e| e.to_string())?;
+        if let Some(db) = guard.as_ref() {
+            // Flush WAL before we close
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+            db.db_path().to_path_buf()
+        } else {
+            default_db_path(&app)?
+        }
+    };
+
+    let stamp = Utc::now().format("%Y%m%d-%H%M%S");
+    let parent = live_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let temp_decrypted = parent.join(format!("restore-temp-{stamp}.sqlite"));
+
+    backup::decrypt_file_to(&backup_path, &temp_decrypted, passphrase.trim())
+        .map_err(|e| e.to_string())?;
+
+    if !backup::looks_like_sqlite(&temp_decrypted).map_err(|e| e.to_string())? {
+        let _ = fs::remove_file(&temp_decrypted);
+        return Err("Decrypted file is not a SQLite database".into());
+    }
+
+    // Validate schema without enabling WAL on the temp file
+    {
+        let probe = rusqlite::Connection::open(&temp_decrypted).map_err(|e| {
+            let _ = fs::remove_file(&temp_decrypted);
+            e.to_string()
+        })?;
+        let ok: bool = probe
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='bound_book_entry'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(false);
+        if !ok {
+            drop(probe);
+            let _ = fs::remove_file(&temp_decrypted);
+            return Err("Backup is not a Rettmark bound-book database".into());
+        }
+    }
+
+    // Close live connection so we can replace the file
+    {
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        *guard = None;
+    }
+
+    let mut safety_copy_path: Option<String> = None;
+    if live_path.exists() {
+        let safety = parent.join(format!("bound-book.pre-restore-{stamp}.sqlite"));
+        fs::copy(&live_path, &safety).map_err(|e| {
+            format!("Could not create safety copy of current book before restore: {e}")
+        })?;
+        safety_copy_path = Some(safety.display().to_string());
+    }
+
+    remove_sidecar_files(&live_path);
+    fs::copy(&temp_decrypted, &live_path)
+        .map_err(|e| format!("Could not replace live database: {e}"))?;
+    let _ = fs::remove_file(&temp_decrypted);
+    remove_sidecar_files(&live_path);
+
+    let db = AppDb::open(live_path.clone()).map_err(|e| e.to_string())?;
+    let status = db.status().map_err(|e| e.to_string())?;
+    let restored_at = Utc::now().to_rfc3339();
+    db.audit(
+        "restore_from_backup",
+        "database",
+        None,
+        Some(&format!(
+            "{{\"from\":{},\"safety\":{}}}",
+            serde_json::to_string(&backup_path.display().to_string()).unwrap_or_default(),
+            serde_json::to_string(&safety_copy_path).unwrap_or_default()
+        )),
+        "Ken Brown",
+    )
+    .map_err(|e| e.to_string())?;
+
+    {
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        *guard = Some(db);
+    }
+
+    Ok(RestoreResult {
+        path: live_path.display().to_string(),
+        safety_copy_path,
+        entry_count: status.entry_count,
+        open_count: status.open_count,
+        restored_at,
     })
 }
 

@@ -30,6 +30,7 @@ pub fn run() {
             commands::set_backup_folder,
             commands::set_backup_passphrase,
             commands::run_encrypted_backup,
+            commands::restore_from_backup,
             commands::export_csv,
             commands::export_ascii,
             commands::list_entries_for_print,

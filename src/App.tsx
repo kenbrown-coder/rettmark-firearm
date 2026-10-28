@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, formatFromWhom, formatToWhom } from "./api";
 import { buildBoundBookPdf } from "./printPdf";
 import type {
@@ -44,28 +44,46 @@ export default function App() {
   const [passphraseConfirm, setPassphraseConfirm] = useState("");
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [lastExportAt, setLastExportAt] = useState<string | null>(null);
+  const [backupDue, setBackupDue] = useState(true);
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [modalPassphrase, setModalPassphrase] = useState("");
+  const [restorePath, setRestorePath] = useState("");
+  const [restorePassphrase, setRestorePassphrase] = useState("");
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const [acqFromKind, setAcqFromKind] = useState("licensee");
+  const [dispToKind, setDispToKind] = useState("form_4473");
 
   const selected = useMemo(
     () => entries.find((e) => e.id === selectedId) ?? null,
     [entries, selectedId],
   );
 
-  const refresh = useCallback(async (q?: SearchQuery) => {
-    const [lic, list, backup] = await Promise.all([
-      api.getLicense(),
-      api.searchEntries(q ?? query),
-      api.getBackupSettings().catch(() => null),
-    ]);
-    setLicense(lic);
-    setEntries(list);
-    setOpenCount(list.filter((e) => e.status === "open" && e.isEffective).length);
-    if (backup) {
+  const applyBackupSettings = useCallback(
+    (backup: Awaited<ReturnType<typeof api.getBackupSettings>> | null) => {
+      if (!backup) return;
       setBackupFolder(backup.backupFolder ?? "");
       setLastBackupAt(backup.lastBackupAt ?? null);
       setLastExportAt(backup.lastAtfExportAt ?? null);
-    }
-    if (!lic) setPanel("setup");
-  }, [query]);
+      setBackupDue(backup.backupDue);
+    },
+    [],
+  );
+
+  const refresh = useCallback(
+    async (q?: SearchQuery) => {
+      const [lic, list, backup] = await Promise.all([
+        api.getLicense(),
+        api.searchEntries(q ?? query),
+        api.getBackupSettings().catch(() => null),
+      ]);
+      setLicense(lic);
+      setEntries(list);
+      setOpenCount(list.filter((e) => e.status === "open" && e.isEffective).length);
+      applyBackupSettings(backup);
+      if (!lic) setPanel("setup");
+    },
+    [query, applyBackupSettings],
+  );
 
   useEffect(() => {
     (async () => {
@@ -83,6 +101,40 @@ export default function App() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function pickBackupFolder() {
+    setError(null);
+    try {
+      const selectedFolder = await open({
+        directory: true,
+        multiple: false,
+        title: "Choose backup folder (OneDrive or Google Drive sync folder)",
+      });
+      if (typeof selectedFolder === "string" && selectedFolder) {
+        setBackupFolder(selectedFolder);
+        await api.setBackupFolder(selectedFolder);
+        setNotice(`Backup folder set: ${selectedFolder}`);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function pickRestoreFile() {
+    setError(null);
+    try {
+      const file = await open({
+        multiple: false,
+        title: "Open encrypted bound-book backup",
+        filters: [{ name: "Rettmark backup", extensions: ["rfbk"] }],
+      });
+      if (typeof file === "string" && file) {
+        setRestorePath(file);
+      }
+    } catch (err) {
+      setError(String(err));
+    }
+  }
 
   async function runSearch(e?: FormEvent) {
     e?.preventDefault();
@@ -116,7 +168,9 @@ export default function App() {
       });
       setLicense(lic);
       setPanel("book");
-      setNotice("License profile saved. Bound book is ready.");
+      setNotice(
+        "License saved. Next: record an Acquisition (receipt) line — same columns as the paper book.",
+      );
       await refresh();
     } catch (err) {
       setError(String(err));
@@ -146,8 +200,11 @@ export default function App() {
         notes: String(fd.get("notes") || "") || null,
       });
       setSelectedId(entry.id);
-      setNotice(`Acquisition line ${entry.lineNumber} recorded.`);
+      setNotice(
+        `Line ${entry.lineNumber} acquired. When sold, select it and open Disposition.`,
+      );
       e.currentTarget.reset();
+      setAcqFromKind("licensee");
       await refresh();
       setPanel("book");
     } catch (err) {
@@ -312,25 +369,71 @@ export default function App() {
     }
   }
 
-  async function runBackup(e: FormEvent) {
-    e.preventDefault();
+  async function doEncryptedBackup(pass: string) {
+    if (pass.trim().length < 8) {
+      setError("Enter the backup passphrase (min 8 characters) to encrypt.");
+      return;
+    }
+    if (!backupFolder.trim()) {
+      setError("Choose a backup folder first (OneDrive or Google Drive sync path).");
+      setPanel("settings");
+      setShowBackupModal(false);
+      return;
+    }
+    setBusy(true);
     setError(null);
     try {
-      if (passphrase.trim().length < 8) {
-        setError("Enter the backup passphrase (min 8 characters) to encrypt.");
-        return;
-      }
-      setBusy(true);
-      const result = await api.runEncryptedBackup(
-        passphrase,
-        backupFolder.trim() || null,
-      );
+      const result = await api.runEncryptedBackup(pass, backupFolder.trim());
       setLastBackupAt(result.createdAt);
-      setNotice(
-        `Encrypted backup written (${result.bytes} bytes): ${result.path}`,
-      );
+      setBackupDue(false);
+      setNotice(`Encrypted backup written (${result.bytes} bytes): ${result.path}`);
       setPassphrase("");
       setPassphraseConfirm("");
+      setModalPassphrase("");
+      setShowBackupModal(false);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runBackup(e: FormEvent) {
+    e.preventDefault();
+    await doEncryptedBackup(passphrase);
+  }
+
+  async function runModalBackup(e: FormEvent) {
+    e.preventDefault();
+    await doEncryptedBackup(modalPassphrase);
+  }
+
+  async function runRestore(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!restorePath.trim()) {
+      setError("Choose a .rfbk backup file to restore.");
+      return;
+    }
+    if (!confirmRestore) {
+      setError("Check the confirmation box — restore replaces the live bound book.");
+      return;
+    }
+    try {
+      setBusy(true);
+      const result = await api.restoreFromBackup(restorePath.trim(), restorePassphrase);
+      setDbPath(result.path);
+      setSelectedId(null);
+      setRestorePassphrase("");
+      setConfirmRestore(false);
+      await refresh({ correctionView: "corrected" });
+      setNotice(
+        `Restored ${result.entryCount} effective line(s).` +
+          (result.safetyCopyPath
+            ? ` Previous book saved as safety copy: ${result.safetyCopyPath}`
+            : ""),
+      );
+      setPanel("book");
     } catch (err) {
       setError(String(err));
     } finally {
@@ -353,9 +456,15 @@ export default function App() {
         <div className="setup-hero">
           <h1>Rettmark Firearms</h1>
           <p>
-            Set up the single-license dealer Acquisition &amp; Disposition book
-            (§ 478.125(e)). Data stays on this computer.
+            First-run setup for the Type 01 dealer Acquisition &amp; Disposition book
+            (§ 478.125(e)). One license, one user, records stay on this computer.
           </p>
+          <ol className="setup-steps">
+            <li>Enter your FFL profile below</li>
+            <li>Add acquisition (receipt) lines like the paper book</li>
+            <li>Fill disposition when a firearm leaves inventory</li>
+            <li>Pick a Drive sync folder and run an encrypted backup</li>
+          </ol>
           {error && <div className="status-line error">{error}</div>}
           <form onSubmit={handleSetup} className="form-grid" style={{ marginTop: "1.25rem" }}>
             <div className="field wide">
@@ -369,26 +478,45 @@ export default function App() {
             </div>
             <div className="field">
               <label htmlFor="fflNumber">FFL number</label>
-              <input id="fflNumber" name="fflNumber" required placeholder="1-XX-XXX-XX-XX-XXXXX" />
+              <input
+                id="fflNumber"
+                name="fflNumber"
+                required
+                placeholder="1-XX-XXX-XX-XX-XXXXX"
+              />
             </div>
             <div className="field">
               <label htmlFor="operatorName">Operator</label>
-              <input id="operatorName" name="operatorName" required defaultValue="Ken Brown" />
+              <input
+                id="operatorName"
+                name="operatorName"
+                required
+                defaultValue="Ken Brown"
+              />
             </div>
             <div className="field wide">
               <label htmlFor="premisesNotes">Premises notes</label>
               <input id="premisesNotes" name="premisesNotes" placeholder="Licensed premises" />
             </div>
             <div className="field wide">
-              <label htmlFor="forms4473">
-                <input id="forms4473" name="forms4473" type="checkbox" /> Forms 4473 filed
-                numerically (allows 4473 txn # in lieu of address)
+              <label htmlFor="forms4473" className="checkbox-label">
+                <input id="forms4473" name="forms4473" type="checkbox" defaultChecked /> Forms
+                4473 filed numerically (use 4473 txn # on disposition when provided)
               </label>
             </div>
             <div className="form-actions">
               <button className="btn" type="submit" disabled={busy}>
                 Open bound book
               </button>
+              {license && (
+                <button
+                  className="btn secondary"
+                  type="button"
+                  onClick={() => setPanel("book")}
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -417,13 +545,58 @@ export default function App() {
             <strong>{openCount}</strong> open
           </span>
           <span title={dbPath}>Local SQLite</span>
-          {lastBackupAt && (
+          {lastBackupAt ? (
             <span>
               Last backup: <strong>{new Date(lastBackupAt).toLocaleString()}</strong>
             </span>
+          ) : (
+            <span>
+              Last backup: <strong>never</strong>
+            </span>
           )}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setError(null);
+              setShowBackupModal(true);
+            }}
+          >
+            Backup now
+          </button>
         </div>
       </header>
+
+      {backupDue && (
+        <div className="backup-banner no-print" role="status">
+          <div>
+            <strong>Backup due.</strong>{" "}
+            {lastBackupAt
+              ? "Last encrypted backup was more than 24 hours ago."
+              : "No encrypted backup yet — set a Drive folder and run one today."}{" "}
+            Ruling 2016-1 expects a daily backup habit against loss.
+          </div>
+          <div className="backup-banner-actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setError(null);
+                setShowBackupModal(true);
+              }}
+            >
+              Backup now
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => setPanel("settings")}
+            >
+              Backup settings
+            </button>
+          </div>
+        </div>
+      )}
 
       <nav className="nav no-print">
         {(
@@ -556,83 +729,108 @@ export default function App() {
               </button>
             </form>
 
-            <div className="book-scroll">
-              <table className="book-table">
-                <thead>
-                  <tr>
-                    <th>Line</th>
-                    <th>Manufacturer / Importer</th>
-                    <th>Model</th>
-                    <th>Serial No.</th>
-                    <th>Type</th>
-                    <th>Caliber</th>
-                    <th>Acq. date</th>
-                    <th>From whom received</th>
-                    <th>Disp. date</th>
-                    <th>Name / address / FFL / 4473</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((e) => (
-                    <tr
-                      key={e.id}
-                      className={[
-                        e.status === "open" && e.isEffective ? "open" : "",
-                        !e.isEffective ? "superseded" : "",
-                        selectedId === e.id ? "selected" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onClick={() => setSelectedId(e.id)}
-                    >
-                      <td>{e.lineNumber}</td>
-                      <td>
-                        {e.manufacturer}
-                        {e.importer ? ` / ${e.importer}` : ""}
-                      </td>
-                      <td>{e.model}</td>
-                      <td className="serial">{e.serialNumber}</td>
-                      <td>{e.firearmType}</td>
-                      <td>{e.caliberOrGauge}</td>
-                      <td>{e.acquisitionDate}</td>
-                      <td>{formatFromWhom(e)}</td>
-                      <td>{e.dispositionDate ?? ""}</td>
-                      <td>{formatToWhom(e)}</td>
-                      <td>
-                        <span
-                          className={`badge ${
-                            !e.isEffective
+            {entries.length === 0 ? (
+              <div className="empty-book no-print">
+                <h3>Book is empty</h3>
+                <p>
+                  Start like the paper book: record a receipt (acquisition) with manufacturer,
+                  model, serial, type, caliber, date, and from whom received.
+                </p>
+                <div className="form-actions">
+                  <button className="btn" type="button" onClick={() => setPanel("acquire")}>
+                    Add first acquisition
+                  </button>
+                  <button
+                    className="btn secondary"
+                    type="button"
+                    onClick={() => setPanel("settings")}
+                  >
+                    Set up backup folder
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="book-scroll">
+                <table className="book-table">
+                  <thead>
+                    <tr>
+                      <th>Line</th>
+                      <th>Manufacturer / Importer</th>
+                      <th>Model</th>
+                      <th>Serial No.</th>
+                      <th>Type</th>
+                      <th>Caliber</th>
+                      <th>Acq. date</th>
+                      <th>From whom received</th>
+                      <th>Disp. date</th>
+                      <th>Name / address / FFL / 4473</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entries.map((e) => (
+                      <tr
+                        key={e.id}
+                        className={[
+                          e.status === "open" && e.isEffective ? "open" : "",
+                          !e.isEffective ? "superseded" : "",
+                          selectedId === e.id ? "selected" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => setSelectedId(e.id)}
+                      >
+                        <td>{e.lineNumber}</td>
+                        <td>
+                          {e.manufacturer}
+                          {e.importer ? ` / ${e.importer}` : ""}
+                        </td>
+                        <td>{e.model}</td>
+                        <td className="serial">{e.serialNumber}</td>
+                        <td>{e.firearmType}</td>
+                        <td>{e.caliberOrGauge}</td>
+                        <td>{e.acquisitionDate}</td>
+                        <td>{formatFromWhom(e)}</td>
+                        <td>{e.dispositionDate ?? ""}</td>
+                        <td>{formatToWhom(e)}</td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              !e.isEffective
+                                ? "superseded"
+                                : e.status === "open"
+                                  ? ""
+                                  : "disposed"
+                            }`}
+                          >
+                            {!e.isEffective
                               ? "superseded"
                               : e.status === "open"
-                                ? ""
-                                : "disposed"
-                          }`}
-                        >
-                          {!e.isEffective
-                            ? "superseded"
-                            : e.status === "open"
-                              ? "open"
-                              : "disposed"}
-                        </span>
-                        {e.correctionReason ? (
-                          <div style={{ marginTop: 4, fontSize: "0.75rem" }}>
-                            Corr: {e.correctionReason}
-                          </div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                  {entries.length === 0 && (
-                    <tr>
-                      <td colSpan={11} style={{ padding: "1.5rem", color: "var(--ink-muted)" }}>
-                        No entries yet. Record an acquisition to begin the book.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                                ? "open"
+                                : "disposed"}
+                          </span>
+                          {e.correctionReason ? (
+                            <div style={{ marginTop: 4, fontSize: "0.75rem" }}>
+                              Corr: {e.correctionReason}
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {selected && selected.status === "open" && selected.isEffective && (
+              <div className="quick-actions no-print">
+                Selected line {selected.lineNumber} (
+                <span className="serial">{selected.serialNumber}</span>) is open.
+                <button className="btn" type="button" onClick={() => setPanel("dispose")}>
+                  Record disposition
+                </button>
+              </div>
+            )}
           </section>
         )}
 
@@ -679,7 +877,12 @@ export default function App() {
                 </div>
                 <div className="field">
                   <label>From whom (kind)</label>
-                  <select name="acquiredFromKind" required defaultValue="licensee">
+                  <select
+                    name="acquiredFromKind"
+                    required
+                    value={acqFromKind}
+                    onChange={(e) => setAcqFromKind(e.target.value)}
+                  >
                     <option value="nonlicensee">Nonlicensee (name + address)</option>
                     <option value="licensee">Licensee (name + FFL)</option>
                     <option value="opening_inventory">Opening inventory</option>
@@ -690,14 +893,24 @@ export default function App() {
                   <label>Name</label>
                   <input name="acquiredFromName" required />
                 </div>
-                <div className="field wide">
-                  <label>Address (nonlicensee)</label>
-                  <input name="acquiredFromAddress" />
-                </div>
-                <div className="field">
-                  <label>FFL number (licensee)</label>
-                  <input name="acquiredFromFfl" />
-                </div>
+                {(acqFromKind === "nonlicensee" || acqFromKind === "other") && (
+                  <div className="field wide">
+                    <label>Address (required for nonlicensee)</label>
+                    <input name="acquiredFromAddress" required={acqFromKind === "nonlicensee"} />
+                  </div>
+                )}
+                {(acqFromKind === "licensee" || acqFromKind === "other") && (
+                  <div className="field">
+                    <label>FFL number (required for licensee)</label>
+                    <input name="acquiredFromFfl" required={acqFromKind === "licensee"} />
+                  </div>
+                )}
+                {acqFromKind === "opening_inventory" && (
+                  <input type="hidden" name="acquiredFromAddress" value="" />
+                )}
+                {acqFromKind === "nonlicensee" && (
+                  <input type="hidden" name="acquiredFromFfl" value="" />
+                )}
                 <div className="field wide">
                   <label>Notes (optional)</label>
                   <input name="notes" />
@@ -717,7 +930,8 @@ export default function App() {
             <h2>Disposition</h2>
             <p className="lede">
               Select an open line in the bound book, then complete disposition columns. Not later
-              than 7 days after the transaction.
+              than 7 days after the transaction. Default for retail transfers: Form 4473
+              transaction number when 4473s are filed numerically.
             </p>
             {!selected || selected.status !== "open" || !selected.isEffective ? (
               <div className="status-line">
@@ -747,7 +961,12 @@ export default function App() {
                     </div>
                     <div className="field">
                       <label>To whom (kind)</label>
-                      <select name="disposedToKind" required defaultValue="form_4473">
+                      <select
+                        name="disposedToKind"
+                        required
+                        value={dispToKind}
+                        onChange={(e) => setDispToKind(e.target.value)}
+                      >
                         <option value="form_4473">Form 4473 transaction #</option>
                         <option value="nonlicensee">Nonlicensee (name + address)</option>
                         <option value="licensee">Licensee (name + FFL)</option>
@@ -755,26 +974,44 @@ export default function App() {
                         <option value="other">Other</option>
                       </select>
                     </div>
-                    <div className="field">
-                      <label>4473 transaction No.</label>
-                      <input name="form4473TransactionNumber" />
-                    </div>
-                    <div className="field">
-                      <label>Name</label>
-                      <input name="disposedToName" />
-                    </div>
-                    <div className="field wide">
-                      <label>Address</label>
-                      <input name="disposedToAddress" />
-                    </div>
-                    <div className="field">
-                      <label>FFL number</label>
-                      <input name="disposedToFfl" />
-                    </div>
-                    <div className="field wide">
-                      <label>Rollover / other reference</label>
-                      <input name="dispositionReference" />
-                    </div>
+                    {dispToKind === "form_4473" && (
+                      <div className="field">
+                        <label>4473 transaction No.</label>
+                        <input name="form4473TransactionNumber" required />
+                      </div>
+                    )}
+                    {(dispToKind === "nonlicensee" ||
+                      dispToKind === "licensee" ||
+                      dispToKind === "other") && (
+                      <div className="field">
+                        <label>Name</label>
+                        <input
+                          name="disposedToName"
+                          required={dispToKind === "nonlicensee" || dispToKind === "licensee"}
+                        />
+                      </div>
+                    )}
+                    {(dispToKind === "nonlicensee" || dispToKind === "other") && (
+                      <div className="field wide">
+                        <label>Address</label>
+                        <input
+                          name="disposedToAddress"
+                          required={dispToKind === "nonlicensee"}
+                        />
+                      </div>
+                    )}
+                    {(dispToKind === "licensee" || dispToKind === "other") && (
+                      <div className="field">
+                        <label>FFL number</label>
+                        <input name="disposedToFfl" required={dispToKind === "licensee"} />
+                      </div>
+                    )}
+                    {dispToKind === "book_rollover_ref" && (
+                      <div className="field wide">
+                        <label>Rollover reference</label>
+                        <input name="dispositionReference" required />
+                      </div>
+                    )}
                     <div className="field wide">
                       <label>Notes</label>
                       <input name="notes" />
@@ -984,15 +1221,21 @@ export default function App() {
             <form onSubmit={saveBackupSettings}>
               <div className="form-grid">
                 <div className="field wide">
-                  <label>Backup folder path</label>
-                  <input
-                    value={backupFolder}
-                    onChange={(e) => setBackupFolder(e.target.value)}
-                    placeholder="/path/to/OneDrive/Rettmark-Backups"
-                  />
+                  <label>Backup folder</label>
+                  <div className="path-row">
+                    <input
+                      value={backupFolder}
+                      onChange={(e) => setBackupFolder(e.target.value)}
+                      placeholder="Choose your OneDrive or Google Drive sync folder"
+                      readOnly
+                    />
+                    <button className="btn secondary" type="button" onClick={pickBackupFolder}>
+                      Choose folder…
+                    </button>
+                  </div>
                 </div>
                 <div className="field">
-                  <label>New passphrase</label>
+                  <label>New passphrase marker</label>
                   <input
                     type="password"
                     value={passphrase}
@@ -1036,6 +1279,57 @@ export default function App() {
                 </button>
               </div>
             </form>
+
+            <h3 className="subhead">Restore from encrypted backup</h3>
+            <p className="lede">
+              Opens a <code>.rfbk</code> file, decrypts with your passphrase, and replaces the live
+              book. The current database is copied first as a safety file
+              (<code>bound-book.pre-restore-*.sqlite</code>).
+            </p>
+            <form onSubmit={runRestore}>
+              <div className="form-grid">
+                <div className="field wide">
+                  <label>Backup file</label>
+                  <div className="path-row">
+                    <input
+                      value={restorePath}
+                      onChange={(e) => setRestorePath(e.target.value)}
+                      placeholder="Select a .rfbk file"
+                      readOnly
+                    />
+                    <button className="btn secondary" type="button" onClick={pickRestoreFile}>
+                      Open .rfbk…
+                    </button>
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Passphrase</label>
+                  <input
+                    type="password"
+                    value={restorePassphrase}
+                    onChange={(e) => setRestorePassphrase(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                </div>
+                <div className="field wide">
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={confirmRestore}
+                      onChange={(e) => setConfirmRestore(e.target.checked)}
+                    />{" "}
+                    I understand this replaces the live bound book (a safety copy is kept)
+                  </label>
+                </div>
+              </div>
+              <div className="form-actions">
+                <button className="btn danger" type="submit" disabled={busy}>
+                  Restore from backup
+                </button>
+              </div>
+            </form>
+
             <p className="lede" style={{ marginTop: "1rem" }}>
               Database path: <span className="serial">{dbPath}</span>
             </p>
@@ -1047,6 +1341,63 @@ export default function App() {
           </section>
         )}
       </main>
+
+      {showBackupModal && (
+        <div className="modal-backdrop no-print" role="dialog" aria-modal="true">
+          <div className="modal">
+            <h2>Encrypted backup</h2>
+            <p>
+              Writes an AES-encrypted <code>.rfbk</code> into your sync folder. Enter the
+              passphrase you use for backups (not stored in plaintext).
+            </p>
+            {!backupFolder.trim() && (
+              <div className="status-line error">
+                No backup folder yet.{" "}
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => {
+                    setShowBackupModal(false);
+                    setPanel("settings");
+                  }}
+                >
+                  Choose folder first
+                </button>
+              </div>
+            )}
+            <form onSubmit={runModalBackup}>
+              <div className="field">
+                <label>Folder</label>
+                <input value={backupFolder || "(not set)"} readOnly />
+              </div>
+              <div className="field">
+                <label>Passphrase</label>
+                <input
+                  type="password"
+                  value={modalPassphrase}
+                  onChange={(e) => setModalPassphrase(e.target.value)}
+                  required
+                  minLength={8}
+                  autoFocus
+                  autoComplete="current-password"
+                />
+              </div>
+              <div className="form-actions">
+                <button className="btn" type="submit" disabled={busy || !backupFolder.trim()}>
+                  Backup now
+                </button>
+                <button
+                  className="btn secondary"
+                  type="button"
+                  onClick={() => setShowBackupModal(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <p className="disclaimer">
         Disclaimer: ATF does not certify or endorse commercial software. This application is a

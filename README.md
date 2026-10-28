@@ -25,6 +25,14 @@ Local-first desktop app for **Rettmark Firearms** (Ken Brown) to keep the dealer
 
 **Out of scope for v1:** e4473, POS, multi-user/roles, multi-FFL, NFA/gunsmith books, cloud SaaS hosting.
 
+### Working assumptions (defaults while Ken reviews)
+
+- **License:** Type 01 dealer A&D only (no gunsmithing / NFA books in v1)
+- **Cutover:** Electronic going forward — no paper-book import yet
+- **Disposition:** Form 4473 transaction number is the default retail path when provided / when 4473s are filed numerically
+- **Users:** Single operator (Ken Brown / Rettmark Firearms)
+- **Sync folder:** Ken chooses whichever OneDrive or Google Drive path he already uses
+
 ---
 
 ## Prerequisites
@@ -63,12 +71,21 @@ npm run tauri:build
 
 ## Backup setup (Two copies)
 
-1. Open **Backup & license**.
-2. Set **Backup folder path** to a folder that syncs with OneDrive or Google Drive (example: `~/OneDrive/Rettmark-Backups` or `~/Google Drive/Rettmark-Backups`).
+1. Open **Backup & license** (or click **Backup now** in the header).
+2. Click **Choose folder…** and pick a folder that syncs with OneDrive or Google Drive.
 3. Choose a strong **passphrase** (8+ characters). The passphrase is **not** stored in plaintext; enter it each time you run a backup.
-4. Click **Run encrypted backup now**.
+4. Click **Run encrypted backup now** (or use the **Backup now** dialog).
 
 The app writes a `.rfbk` file: Argon2id-derived key + AES-256-GCM ciphertext of the SQLite database. Cloud sync then copies the already-encrypted file.
+
+A **Backup due** banner appears if there has never been a backup or the last one is older than ~24 hours (manual reminder until scheduled backup ships).
+
+### Restore from `.rfbk`
+
+1. **Backup & license** → **Open .rfbk…**
+2. Enter the passphrase used when that backup was created
+3. Confirm you understand the live book will be replaced
+4. Restore — the previous live DB is kept as `bound-book.pre-restore-*.sqlite` beside the app data file
 
 **Ops reminder (2016-1):** keep a daily backup habit against loss; also keep an unencrypted premises download/print on a cadence (at least semiannually for local systems) and be able to print current records on request.
 

@@ -10,6 +10,7 @@ import type {
   ExportResult,
   License,
   LicenseInput,
+  RestoreResult,
   SearchQuery,
 } from "./types";
 
@@ -38,6 +39,8 @@ export const api = {
       passphrase,
       folder: folder ?? null,
     }),
+  restoreFromBackup: (backupPath: string, passphrase: string) =>
+    invoke<RestoreResult>("restore_from_backup", { backupPath, passphrase }),
   exportCsv: (destPath: string) =>
     invoke<ExportResult>("export_csv", { destPath }),
   exportAscii: (destPath: string) =>

@@ -44,7 +44,6 @@ pub fn encrypt_file_to(src: &Path, dest: &Path, passphrase: &str) -> Result<u64>
     Ok(out.len() as u64)
 }
 
-#[allow(dead_code)]
 pub fn decrypt_file_to(src: &Path, dest: &Path, passphrase: &str) -> Result<()> {
     let data = fs::read(src).context("read encrypted backup")?;
     if data.len() < MAGIC.len() + SALT_LEN + NONCE_LEN + 16 {
@@ -71,6 +70,17 @@ pub fn decrypt_file_to(src: &Path, dest: &Path, passphrase: &str) -> Result<()> 
     }
     fs::write(dest, plaintext)?;
     Ok(())
+}
+
+pub fn looks_like_sqlite(path: &Path) -> Result<bool> {
+    let mut header = [0u8; 16];
+    let mut f = fs::File::open(path).context("open candidate sqlite")?;
+    use std::io::Read;
+    let n = f.read(&mut header)?;
+    if n < 16 {
+        return Ok(false);
+    }
+    Ok(&header[..15] == b"SQLite format 3")
 }
 
 fn derive_key(passphrase: &[u8], salt: &[u8]) -> Result<[u8; 32]> {
@@ -104,9 +114,13 @@ mod tests {
         let src = dir.join(format!("rfbk-src-{nanos}.bin"));
         let enc = dir.join(format!("rfbk-enc-{nanos}.rfbk"));
         let out = dir.join(format!("rfbk-out-{nanos}.bin"));
-        std::fs::write(&src, b"rettmark-sqlite-bytes").unwrap();
+        // Minimal SQLite header so restore validation helpers can recognize the payload
+        let mut bytes = b"SQLite format 3\0".to_vec();
+        bytes.extend_from_slice(b"rettmark-payload");
+        std::fs::write(&src, &bytes).unwrap();
         encrypt_file_to(&src, &enc, "test-pass-123").unwrap();
         decrypt_file_to(&enc, &out, "test-pass-123").unwrap();
-        assert_eq!(std::fs::read(&out).unwrap(), b"rettmark-sqlite-bytes");
+        assert_eq!(std::fs::read(&out).unwrap(), bytes);
+        assert!(looks_like_sqlite(&out).unwrap());
     }
 }

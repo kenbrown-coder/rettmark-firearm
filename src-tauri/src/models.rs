@@ -135,6 +135,18 @@ pub struct BackupSettings {
     pub backup_folder: Option<String>,
     pub last_backup_at: Option<String>,
     pub last_atf_export_at: Option<String>,
+    /// True when never backed up, or last backup older than ~24 hours.
+    pub backup_due: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreResult {
+    pub path: String,
+    pub safety_copy_path: Option<String>,
+    pub entry_count: i64,
+    pub open_count: i64,
+    pub restored_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

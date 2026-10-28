@@ -116,12 +116,21 @@ export interface BackupSettings {
   backupFolder?: string | null;
   lastBackupAt?: string | null;
   lastAtfExportAt?: string | null;
+  backupDue: boolean;
 }
 
 export interface BackupResult {
   path: string;
   createdAt: string;
   bytes: number;
+}
+
+export interface RestoreResult {
+  path: string;
+  safetyCopyPath?: string | null;
+  entryCount: number;
+  openCount: number;
+  restoredAt: string;
 }
 
 export interface ExportResult {
