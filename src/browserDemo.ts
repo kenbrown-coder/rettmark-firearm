@@ -27,6 +27,25 @@ let backupFolder: string | null = null;
 let lastBackupAt: string | null = null;
 let lastAtfExportAt: string | null = null;
 
+const WIPE_FLAG_KEY = "rettmark-browser-demo-sample-wiped";
+
+function wasSampleWiped(): boolean {
+  try {
+    return sessionStorage.getItem(WIPE_FLAG_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markSampleWiped(wiped: boolean) {
+  try {
+    if (wiped) sessionStorage.setItem(WIPE_FLAG_KEY, "1");
+    else sessionStorage.removeItem(WIPE_FLAG_KEY);
+  } catch {
+    /* ignore private-mode storage failures */
+  }
+}
+
 function todayMinus(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
@@ -347,6 +366,7 @@ export const browserDemoApi = {
     };
   },
   loadSampleDemo: async () => {
+    markSampleWiped(false);
     seedSample();
     return browserDemoApi.getSampleDemoStatus();
   },
@@ -355,13 +375,14 @@ export const browserDemoApi = {
       (e) =>
         !(e.serialNumber.startsWith("SAMPLE-") || (e.notes ?? "").includes("SAMPLE/DEMO")),
     );
+    markSampleWiped(true);
     return browserDemoApi.getSampleDemoStatus();
   },
 };
 
-/** Auto-seed sample book for walkthrough capture when ?demo=1 or always in browser. */
+/** Auto-seed sample book for walkthrough capture when empty — skip after Wipe sample data. */
 export function maybeAutoloadSample() {
-  if (isBrowserDemo() && entries.length === 0) {
+  if (isBrowserDemo() && entries.length === 0 && !wasSampleWiped()) {
     seedSample();
   }
 }
