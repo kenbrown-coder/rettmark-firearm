@@ -4,6 +4,7 @@ version = "0.1.3"
 description = "Rettmark Firearms digital FFL A&D bound book"
 authors = ["Ken Brown / Rettmark Firearms"]
 edition = "2021"
+default-run = "rettmark-firearm"
 
 [lib]
 name = "rettmark_firearm_lib"
