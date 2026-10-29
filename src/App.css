@@ -453,6 +453,19 @@ button {
   font-size: 0.92rem;
 }
 
+.atf-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 1.5rem;
+  background: #e8eee4;
+  border-bottom: 1px solid #6a7f5c;
+  color: #24362c;
+  font-size: 0.92rem;
+}
+
 .backup-banner-actions {
   display: flex;
   flex-wrap: wrap;

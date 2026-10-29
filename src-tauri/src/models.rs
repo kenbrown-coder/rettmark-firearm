@@ -137,6 +137,8 @@ pub struct BackupSettings {
     pub last_atf_export_at: Option<String>,
     /// True when never backed up, or last backup older than ~24 hours.
     pub backup_due: bool,
+    /// True when never exported/printed, or last ATF-style download older than ~183 days.
+    pub atf_download_due: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

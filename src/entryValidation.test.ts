@@ -46,6 +46,16 @@ describe("validateAcquisition", () => {
   it("passes a complete licensee acquisition", () => {
     expect(hasErrors(validateAcquisition(goodAcq))).toBe(false);
   });
+
+  it("rejects other acquisition with neither address nor FFL", () => {
+    const errors = validateAcquisition({
+      ...goodAcq,
+      acquiredFromKind: "other",
+      acquiredFromFfl: "",
+      acquiredFromAddress: "",
+    });
+    expect(errors.acquiredFromAddress).toBeTruthy();
+  });
 });
 
 describe("validateDisposition", () => {
@@ -73,6 +83,19 @@ describe("validateDisposition", () => {
       dispositionReference: "",
     });
     expect(errors.disposedToName).toBeTruthy();
+    expect(errors.disposedToAddress).toBeTruthy();
+  });
+
+  it("rejects other disposition without locator fields", () => {
+    const errors = validateDisposition({
+      dispositionDate: "2026-10-05",
+      disposedToKind: "other",
+      disposedToName: "Someone",
+      disposedToAddress: "",
+      disposedToFfl: "",
+      form4473TransactionNumber: "",
+      dispositionReference: "",
+    });
     expect(errors.disposedToAddress).toBeTruthy();
   });
 });

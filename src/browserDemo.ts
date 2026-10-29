@@ -293,6 +293,7 @@ export const browserDemoApi = {
     lastBackupAt,
     lastAtfExportAt,
     backupDue: true,
+    atfDownloadDue: true,
   }),
   setBackupFolder: async (folder: string) => {
     backupFolder = folder;

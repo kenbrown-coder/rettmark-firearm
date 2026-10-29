@@ -55,7 +55,13 @@ export function validateAcquisition(v: AcquisitionValues): FieldErrors {
       }
       break;
     case "opening_inventory":
+      break;
     case "other":
+      // Still need a usable locator beyond name (address and/or FFL).
+      if (blank(v.acquiredFromAddress) && blank(v.acquiredFromFfl)) {
+        errors.acquiredFromAddress =
+          "“Other” acquisition needs an address and/or FFL number (do not leave both blank).";
+      }
       break;
     default:
       errors.acquiredFromKind = "Select how the firearm was received.";
@@ -98,6 +104,18 @@ export function validateDisposition(v: DispositionValues): FieldErrors {
       }
       break;
     case "other":
+      if (blank(v.disposedToName)) {
+        errors.disposedToName = "“Other” disposition requires a name.";
+      }
+      if (
+        blank(v.disposedToAddress) &&
+        blank(v.disposedToFfl) &&
+        blank(v.form4473TransactionNumber) &&
+        blank(v.dispositionReference)
+      ) {
+        errors.disposedToAddress =
+          "“Other” disposition needs address, FFL, 4473 txn #, or a reference — at least one.";
+      }
       break;
     default:
       errors.disposedToKind = "Select disposition kind.";

@@ -117,6 +117,7 @@ export interface BackupSettings {
   lastBackupAt?: string | null;
   lastAtfExportAt?: string | null;
   backupDue: boolean;
+  atfDownloadDue: boolean;
 }
 
 export interface BackupResult {

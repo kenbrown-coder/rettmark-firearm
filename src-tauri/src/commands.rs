@@ -40,6 +40,17 @@ fn backup_is_due(last_backup_at: &Option<String>) -> bool {
     }
 }
 
+/// Local-system floor under Ruling 2016-1 is at least semiannual premises download/print.
+fn atf_download_is_due(last_atf_export_at: &Option<String>) -> bool {
+    match last_atf_export_at {
+        None => true,
+        Some(s) => match DateTime::parse_from_rfc3339(s) {
+            Ok(dt) => Utc::now() - dt.with_timezone(&Utc) > Duration::days(183),
+            Err(_) => true,
+        },
+    }
+}
+
 fn remove_sidecar_files(db_path: &Path) {
     let wal = PathBuf::from(format!("{}-wal", db_path.display()));
     let shm = PathBuf::from(format!("{}-shm", db_path.display()));
@@ -143,17 +154,20 @@ pub fn get_backup_settings(state: State<'_, DbState>) -> Result<BackupSettings, 
         let last_backup_at = db
             .get_setting("last_backup_at")
             .map_err(|e| e.to_string())?;
+        let last_atf_export_at = db
+            .get_setting("last_atf_export_at")
+            .map_err(|e| e.to_string())?;
         let backup_due = backup_is_due(&last_backup_at);
+        let atf_download_due = atf_download_is_due(&last_atf_export_at);
         Ok(BackupSettings {
             passphrase_set,
             backup_folder: db
                 .get_setting("backup_folder")
                 .map_err(|e| e.to_string())?,
             last_backup_at,
-            last_atf_export_at: db
-                .get_setting("last_atf_export_at")
-                .map_err(|e| e.to_string())?,
+            last_atf_export_at,
             backup_due,
+            atf_download_due,
         })
     })
 }

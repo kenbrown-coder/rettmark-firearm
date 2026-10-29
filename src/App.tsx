@@ -64,6 +64,8 @@ export default function App() {
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [lastExportAt, setLastExportAt] = useState<string | null>(null);
   const [backupDue, setBackupDue] = useState(true);
+  const [atfDownloadDue, setAtfDownloadDue] = useState(true);
+  const [corrErrors, setCorrErrors] = useState<FieldErrors>({});
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [modalPassphrase, setModalPassphrase] = useState("");
   const [restorePath, setRestorePath] = useState("");
@@ -92,6 +94,7 @@ export default function App() {
       setLastBackupAt(backup.lastBackupAt ?? null);
       setLastExportAt(backup.lastAtfExportAt ?? null);
       setBackupDue(backup.backupDue);
+      setAtfDownloadDue(backup.atfDownloadDue);
     },
     [],
   );
@@ -346,25 +349,69 @@ export default function App() {
       return;
     }
     const fd = new FormData(e.currentTarget);
+    const reason = String(fd.get("reason") || "");
+    const acqValues = {
+      manufacturer: String(fd.get("manufacturer") || ""),
+      model: String(fd.get("model") || ""),
+      serialNumber: String(fd.get("serialNumber") || ""),
+      firearmType: String(fd.get("firearmType") || ""),
+      caliberOrGauge: String(fd.get("caliberOrGauge") || ""),
+      acquisitionDate: String(fd.get("acquisitionDate") || ""),
+      acquiredFromKind: String(fd.get("acquiredFromKind") || ""),
+      acquiredFromName: String(fd.get("acquiredFromName") || ""),
+      acquiredFromAddress: String(fd.get("acquiredFromAddress") || ""),
+      acquiredFromFfl: String(fd.get("acquiredFromFfl") || ""),
+    };
+    const dispositionDate = String(fd.get("dispositionDate") || "");
+    const disposedToKind = String(fd.get("disposedToKind") || "");
+    let errors = validateAcquisition(acqValues);
+    if (!reason.trim()) {
+      errors = { ...errors, reason: "Correction reason is required (2016-1 method a)." };
+    }
+    if (dispositionDate.trim()) {
+      if (!disposedToKind.trim()) {
+        errors = { ...errors, disposedToKind: "Disposed lines need a disposition kind." };
+      } else {
+        errors = {
+          ...errors,
+          ...validateDisposition({
+            dispositionDate,
+            disposedToKind,
+            disposedToName: String(fd.get("disposedToName") || ""),
+            disposedToAddress: String(fd.get("disposedToAddress") || ""),
+            disposedToFfl: String(fd.get("disposedToFfl") || ""),
+            form4473TransactionNumber: String(fd.get("form4473TransactionNumber") || ""),
+            dispositionReference: String(fd.get("dispositionReference") || ""),
+            acquisitionDate: acqValues.acquisitionDate,
+          }),
+        };
+      }
+    }
+    setCorrErrors(errors);
+    if (hasErrors(errors)) {
+      setError("Fix required fields before saving the correction.");
+      return;
+    }
+
     setError(null);
     try {
       setBusy(true);
       const entry = await api.correctEntry({
         entryId: selected.id,
-        reason: String(fd.get("reason") || ""),
-        manufacturer: String(fd.get("manufacturer") || ""),
+        reason,
+        manufacturer: acqValues.manufacturer,
         importer: String(fd.get("importer") || "") || null,
-        model: String(fd.get("model") || ""),
-        serialNumber: String(fd.get("serialNumber") || ""),
-        firearmType: String(fd.get("firearmType") || ""),
-        caliberOrGauge: String(fd.get("caliberOrGauge") || ""),
-        acquisitionDate: String(fd.get("acquisitionDate") || ""),
-        acquiredFromKind: String(fd.get("acquiredFromKind") || ""),
-        acquiredFromName: String(fd.get("acquiredFromName") || ""),
-        acquiredFromAddress: String(fd.get("acquiredFromAddress") || "") || null,
-        acquiredFromFfl: String(fd.get("acquiredFromFfl") || "") || null,
-        dispositionDate: String(fd.get("dispositionDate") || "") || null,
-        disposedToKind: String(fd.get("disposedToKind") || "") || null,
+        model: acqValues.model,
+        serialNumber: acqValues.serialNumber,
+        firearmType: acqValues.firearmType,
+        caliberOrGauge: acqValues.caliberOrGauge,
+        acquisitionDate: acqValues.acquisitionDate,
+        acquiredFromKind: acqValues.acquiredFromKind,
+        acquiredFromName: acqValues.acquiredFromName,
+        acquiredFromAddress: acqValues.acquiredFromAddress || null,
+        acquiredFromFfl: acqValues.acquiredFromFfl || null,
+        dispositionDate: dispositionDate || null,
+        disposedToKind: disposedToKind || null,
         disposedToName: String(fd.get("disposedToName") || "") || null,
         disposedToAddress: String(fd.get("disposedToAddress") || "") || null,
         disposedToFfl: String(fd.get("disposedToFfl") || "") || null,
@@ -374,6 +421,7 @@ export default function App() {
         notes: String(fd.get("notes") || "") || null,
       });
       setSelectedId(entry.id);
+      setCorrErrors({});
       setNotice(
         `Correction saved for line ${entry.lineNumber}. Original retained (2016-1 method a).`,
       );
@@ -397,6 +445,7 @@ export default function App() {
       setBusy(true);
       const result = await api.exportCsv(dest);
       setLastExportAt(result.createdAt);
+      setAtfDownloadDue(false);
       setNotice(`CSV export written (${result.entryCount} lines): ${result.path}`);
     } catch (err) {
       setError(String(err));
@@ -416,6 +465,7 @@ export default function App() {
       setBusy(true);
       const result = await api.exportAscii(dest);
       setLastExportAt(result.createdAt);
+      setAtfDownloadDue(false);
       setNotice(`ASCII download written (${result.entryCount} lines): ${result.path}`);
     } catch (err) {
       setError(String(err));
@@ -433,6 +483,7 @@ export default function App() {
       doc.save(`rettmark-ad-${todayISO()}.pdf`);
       setNotice(`PDF generated for ${list.length} lines (print/save locally).`);
       setLastExportAt(new Date().toISOString());
+      setAtfDownloadDue(false);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -458,6 +509,7 @@ export default function App() {
       const pdfName = pkg.csvPath.replace(/\.csv$/i, ".pdf");
       await api.writeBinaryFile(pdfName, base64);
       setLastExportAt(pkg.createdAt);
+      setAtfDownloadDue(false);
       setNotice(
         `Inspection package written (${pkg.entryCount} lines): ${pkg.directory} (PDF + CSV + ASCII + MANIFEST)`,
       );
@@ -832,6 +884,35 @@ export default function App() {
               onClick={() => setPanel("settings")}
             >
               Backup settings
+            </button>
+          </div>
+        </div>
+      )}
+
+      {atfDownloadDue && (
+        <div className="atf-banner no-print" role="status">
+          <div>
+            <strong>Premises download/print due.</strong>{" "}
+            {lastExportAt
+              ? "Last ATF-style export was more than ~6 months ago."
+              : "No unencrypted premises download/print recorded yet."}{" "}
+            For local systems, Ruling 2016-1 expects at least a semiannual download/print (and
+            print on ATF request within 24 hours). Keep the file on this PC or a USB stick.
+          </div>
+          <div className="backup-banner-actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void openInspection()}
+            >
+              Inspection / export
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => setPanel("export")}
+            >
+              Print / export
             </button>
           </div>
         </div>
@@ -1373,130 +1454,157 @@ export default function App() {
                 Select the effective line to correct from the Bound book tab.
               </div>
             ) : (
-              <form onSubmit={handleCorrect}>
+              <form
+                onSubmit={handleCorrect}
+                onChange={() => {
+                  if (Object.keys(corrErrors).length) setCorrErrors({});
+                }}
+              >
                 <div className="form-grid">
-                  <div className="field wide">
+                  <div className={fieldClass(corrErrors, "reason", "wide")}>
                     <label>Reason for correction</label>
-                    <input name="reason" required placeholder="e.g. transposed serial digit" />
+                    <input name="reason" placeholder="e.g. transposed serial digit" />
+                    <FieldError errors={corrErrors} name="reason" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "manufacturer")}>
                     <label>Manufacturer</label>
-                    <input name="manufacturer" required defaultValue={selected.manufacturer} />
+                    <input name="manufacturer" defaultValue={selected.manufacturer} />
+                    <FieldError errors={corrErrors} name="manufacturer" />
                   </div>
                   <div className="field">
                     <label>Importer</label>
                     <input name="importer" defaultValue={selected.importer ?? ""} />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "model")}>
                     <label>Model</label>
-                    <input name="model" required defaultValue={selected.model} />
+                    <input name="model" defaultValue={selected.model} />
+                    <FieldError errors={corrErrors} name="model" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "serialNumber")}>
                     <label>Serial No.</label>
                     <input
                       name="serialNumber"
-                      required
                       defaultValue={selected.serialNumber}
                       className="serial"
                     />
+                    <FieldError errors={corrErrors} name="serialNumber" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "firearmType")}>
                     <label>Type</label>
-                    <input name="firearmType" required defaultValue={selected.firearmType} />
+                    <input name="firearmType" defaultValue={selected.firearmType} />
+                    <FieldError errors={corrErrors} name="firearmType" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "caliberOrGauge")}>
                     <label>Caliber</label>
-                    <input
-                      name="caliberOrGauge"
-                      required
-                      defaultValue={selected.caliberOrGauge}
-                    />
+                    <input name="caliberOrGauge" defaultValue={selected.caliberOrGauge} />
+                    <FieldError errors={corrErrors} name="caliberOrGauge" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "acquisitionDate")}>
                     <label>Acquisition date</label>
                     <input
                       name="acquisitionDate"
                       type="date"
-                      required
                       defaultValue={selected.acquisitionDate}
                     />
+                    <FieldError errors={corrErrors} name="acquisitionDate" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "acquiredFromKind")}>
                     <label>Acquired from kind</label>
-                    <input
+                    <select
                       name="acquiredFromKind"
-                      required
                       defaultValue={selected.acquiredFromKind}
-                    />
+                    >
+                      <option value="nonlicensee">nonlicensee</option>
+                      <option value="licensee">licensee</option>
+                      <option value="opening_inventory">opening_inventory</option>
+                      <option value="other">other</option>
+                    </select>
+                    <FieldError errors={corrErrors} name="acquiredFromKind" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "acquiredFromName")}>
                     <label>Acquired from name</label>
                     <input
                       name="acquiredFromName"
-                      required
                       defaultValue={selected.acquiredFromName}
                     />
+                    <FieldError errors={corrErrors} name="acquiredFromName" />
                   </div>
-                  <div className="field wide">
+                  <div className={fieldClass(corrErrors, "acquiredFromAddress", "wide")}>
                     <label>Acquired from address</label>
                     <input
                       name="acquiredFromAddress"
                       defaultValue={selected.acquiredFromAddress ?? ""}
                     />
+                    <FieldError errors={corrErrors} name="acquiredFromAddress" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "acquiredFromFfl")}>
                     <label>Acquired from FFL</label>
                     <input
                       name="acquiredFromFfl"
                       defaultValue={selected.acquiredFromFfl ?? ""}
                     />
+                    <FieldError errors={corrErrors} name="acquiredFromFfl" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "dispositionDate")}>
                     <label>Disposition date</label>
                     <input
                       name="dispositionDate"
                       type="date"
                       defaultValue={selected.dispositionDate ?? ""}
                     />
+                    <FieldError errors={corrErrors} name="dispositionDate" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "disposedToKind")}>
                     <label>Disposed to kind</label>
-                    <input
+                    <select
                       name="disposedToKind"
                       defaultValue={selected.disposedToKind ?? ""}
-                    />
+                    >
+                      <option value="">(open — no disposition)</option>
+                      <option value="form_4473">form_4473</option>
+                      <option value="nonlicensee">nonlicensee</option>
+                      <option value="licensee">licensee</option>
+                      <option value="book_rollover_ref">book_rollover_ref</option>
+                      <option value="other">other</option>
+                    </select>
+                    <FieldError errors={corrErrors} name="disposedToKind" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "disposedToName")}>
                     <label>Disposed to name</label>
                     <input
                       name="disposedToName"
                       defaultValue={selected.disposedToName ?? ""}
                     />
+                    <FieldError errors={corrErrors} name="disposedToName" />
                   </div>
-                  <div className="field wide">
+                  <div className={fieldClass(corrErrors, "disposedToAddress", "wide")}>
                     <label>Disposed to address</label>
                     <input
                       name="disposedToAddress"
                       defaultValue={selected.disposedToAddress ?? ""}
                     />
+                    <FieldError errors={corrErrors} name="disposedToAddress" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "disposedToFfl")}>
                     <label>Disposed to FFL</label>
                     <input name="disposedToFfl" defaultValue={selected.disposedToFfl ?? ""} />
+                    <FieldError errors={corrErrors} name="disposedToFfl" />
                   </div>
-                  <div className="field">
+                  <div className={fieldClass(corrErrors, "form4473TransactionNumber")}>
                     <label>4473 txn #</label>
                     <input
                       name="form4473TransactionNumber"
                       defaultValue={selected.form4473TransactionNumber ?? ""}
                     />
+                    <FieldError errors={corrErrors} name="form4473TransactionNumber" />
                   </div>
-                  <div className="field wide">
+                  <div className={fieldClass(corrErrors, "dispositionReference", "wide")}>
                     <label>Disposition reference</label>
                     <input
                       name="dispositionReference"
                       defaultValue={selected.dispositionReference ?? ""}
                     />
+                    <FieldError errors={corrErrors} name="dispositionReference" />
                   </div>
                   <div className="field wide">
                     <label>Notes</label>

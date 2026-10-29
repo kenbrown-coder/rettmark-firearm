@@ -484,7 +484,22 @@ impl AppDb {
                     bail!("Licensee acquisition requires FFL number");
                 }
             }
-            "opening_inventory" | "other" => {}
+            "opening_inventory" => {}
+            "other" => {
+                let no_addr = input
+                    .acquired_from_address
+                    .as_ref()
+                    .map(|s| s.trim().is_empty())
+                    .unwrap_or(true);
+                let no_ffl = input
+                    .acquired_from_ffl
+                    .as_ref()
+                    .map(|s| s.trim().is_empty())
+                    .unwrap_or(true);
+                if no_addr && no_ffl {
+                    bail!("Other acquisition requires an address and/or FFL number");
+                }
+            }
             _ => bail!("Invalid acquired_from_kind"),
         }
         Ok(())
@@ -504,63 +519,14 @@ impl AppDb {
             bail!("Disposition date is required");
         }
         // Disposition-before-acquisition is a soft warning in the UI (unusual, not blocked).
-        match input.disposed_to_kind.as_str() {
-            "nonlicensee" => {
-                if input
-                    .disposed_to_name
-                    .as_ref()
-                    .map(|s| s.trim().is_empty())
-                    .unwrap_or(true)
-                    || input
-                        .disposed_to_address
-                        .as_ref()
-                        .map(|s| s.trim().is_empty())
-                        .unwrap_or(true)
-                {
-                    bail!("Nonlicensee disposition requires name and address (or use Form 4473 txn #)");
-                }
-            }
-            "licensee" => {
-                if input
-                    .disposed_to_name
-                    .as_ref()
-                    .map(|s| s.trim().is_empty())
-                    .unwrap_or(true)
-                {
-                    bail!("Licensee disposition requires name");
-                }
-                if input
-                    .disposed_to_ffl
-                    .as_ref()
-                    .map(|s| s.trim().is_empty())
-                    .unwrap_or(true)
-                {
-                    bail!("Licensee disposition requires FFL number");
-                }
-            }
-            "form_4473" => {
-                if input
-                    .form_4473_transaction_number
-                    .as_ref()
-                    .map(|s| s.trim().is_empty())
-                    .unwrap_or(true)
-                {
-                    bail!("Form 4473 disposition requires transaction number");
-                }
-            }
-            "book_rollover_ref" => {
-                if input
-                    .disposition_reference
-                    .as_ref()
-                    .map(|s| s.trim().is_empty())
-                    .unwrap_or(true)
-                {
-                    bail!("Book rollover requires a reference to the subsequent entry");
-                }
-            }
-            "other" => {}
-            _ => bail!("Invalid disposed_to_kind"),
-        }
+        Self::validate_disposition_fields(
+            &input.disposed_to_kind,
+            &input.disposed_to_name,
+            &input.disposed_to_address,
+            &input.disposed_to_ffl,
+            &input.form_4473_transaction_number,
+            &input.disposition_reference,
+        )?;
 
         let actor = self.operator_name();
         let date_warning = input.disposition_date.trim() < existing.acquisition_date.as_str();
@@ -610,6 +576,54 @@ impl AppDb {
             &actor,
         )?;
         self.get_entry(input.entry_id)?.context("entry missing")
+    }
+
+    fn validate_disposition_fields(
+        kind: &str,
+        name: &Option<String>,
+        address: &Option<String>,
+        ffl: &Option<String>,
+        form_4473: &Option<String>,
+        reference: &Option<String>,
+    ) -> Result<()> {
+        let empty = |v: &Option<String>| v.as_ref().map(|s| s.trim().is_empty()).unwrap_or(true);
+        match kind {
+            "nonlicensee" => {
+                if empty(name) || empty(address) {
+                    bail!("Nonlicensee disposition requires name and address (or use Form 4473 txn #)");
+                }
+            }
+            "licensee" => {
+                if empty(name) {
+                    bail!("Licensee disposition requires name");
+                }
+                if empty(ffl) {
+                    bail!("Licensee disposition requires FFL number");
+                }
+            }
+            "form_4473" => {
+                if empty(form_4473) {
+                    bail!("Form 4473 disposition requires transaction number");
+                }
+            }
+            "book_rollover_ref" => {
+                if empty(reference) {
+                    bail!("Book rollover requires a reference to the subsequent entry");
+                }
+            }
+            "other" => {
+                if empty(name) {
+                    bail!("Other disposition requires a name");
+                }
+                if empty(address) && empty(ffl) && empty(form_4473) && empty(reference) {
+                    bail!(
+                        "Other disposition requires address, FFL, 4473 txn #, or a reference"
+                    );
+                }
+            }
+            _ => bail!("Invalid disposed_to_kind"),
+        }
+        Ok(())
     }
 
     /// Effective open lines with the same serial (case-sensitive trim match).
@@ -667,6 +681,25 @@ impl AppDb {
         } else {
             "open"
         };
+        if status == "disposed" {
+            let kind = input
+                .disposed_to_kind
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if kind.is_empty() {
+                bail!("Disposed lines require a disposition kind");
+            }
+            Self::validate_disposition_fields(
+                &kind,
+                &input.disposed_to_name,
+                &input.disposed_to_address,
+                &input.disposed_to_ffl,
+                &input.form_4473_transaction_number,
+                &input.disposition_reference,
+            )?;
+        }
         let actor = self.operator_name();
         let now = Utc::now().to_rfc3339();
 
