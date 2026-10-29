@@ -38,8 +38,9 @@ export function InspectionView({
           <h2>Inspection mode</h2>
           <p className="lede">
             Read-only view of the effective bound book in § 478.125(e) column order. Use for ATF
-            inspection presentation or printing. Edits are disabled here — return to Bound book /
-            Acquisition / Disposition to change records.
+            inspection presentation or printing. For the digital file inspectors commonly receive,
+            click <strong>Export for ATF inspection</strong> (unencrypted PDF + CSV + ASCII). Edits
+            are disabled here — return to Bound book / Acquisition / Disposition to change records.
           </p>
         </div>
         <div className="form-actions no-print">

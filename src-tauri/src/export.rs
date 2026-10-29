@@ -207,18 +207,28 @@ pub fn export_inspection_package(db: &AppDb, dest_dir: &Path) -> Result<Inspecti
         writeln!(m, "Operator: {}", lic.operator_name)?;
     }
     writeln!(m, "Entry count: {}", csv.entry_count)?;
+    writeln!(m, "Encryption: NONE (unencrypted premises / inspection download)")?;
     writeln!(m, "Files:")?;
-    writeln!(m, "  - {}", csv_path.file_name().unwrap().to_string_lossy())?;
     writeln!(
         m,
-        "  - {}",
+        "  - {pdf_name}  (unencrypted PDF — paper § 478.125(e) columns; primary file for ATF)"
+    )?;
+    writeln!(
+        m,
+        "  - {}  (CSV of full effective A&D)",
+        csv_path.file_name().unwrap().to_string_lossy()
+    )?;
+    writeln!(
+        m,
+        "  - {}  (ASCII/text of full effective A&D)",
         ascii_path.file_name().unwrap().to_string_lossy()
     )?;
+    writeln!(m, "  - MANIFEST.txt  (this file)")?;
+    writeln!(m)?;
     writeln!(
         m,
-        "  - {pdf_name}  (written by app UI if PDF step succeeds)"
+        "What to give ATF: the PDF is the usual presentation copy; include CSV/ASCII if requested."
     )?;
-    writeln!(m)?;
     writeln!(
         m,
         "Disclaimer: ATF does not certify software. Not legal advice. Licensee remains responsible."
@@ -228,7 +238,7 @@ pub fn export_inspection_package(db: &AppDb, dest_dir: &Path) -> Result<Inspecti
         "inspection_package",
         &dest_dir.display().to_string(),
         csv.entry_count,
-        Some("Inspection/OOB package (CSV+ASCII+manifest; PDF via UI)"),
+        Some("ATF inspection package (unencrypted PDF via UI + CSV + ASCII + MANIFEST)"),
     )?;
     db.set_setting("last_atf_export_at", &created_at)?;
 

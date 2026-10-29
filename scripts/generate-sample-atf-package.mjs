@@ -14,9 +14,19 @@ const autoTable = require("jspdf-autotable").default || require("jspdf-autotable
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 
-const outArg =
-  process.argv[2] ||
-  "/cursor/stores/bc-27b051df-69a0-47d2-a61c-188daf76fd93/media/atf-inspection-package";
+const defaultOut = path.join(
+  process.env.USERPROFILE || process.env.HOME || root,
+  "AppData",
+  "Local",
+  "Cursor",
+  "AgentStores",
+  "cursor_agent_stores",
+  "bc-27b051df-69a0-47d2-a61c-188daf76fd93",
+  "files",
+  "media",
+  "atf-inspection-package",
+);
+const outArg = process.argv[2] || defaultOut;
 
 const SAMPLE_NOTE =
   "[SAMPLE/DEMO — fictional data only; not a real A&D record]";
