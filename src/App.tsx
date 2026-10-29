@@ -506,8 +506,7 @@ export default function App() {
       const doc = buildBoundBookPdf(license, list);
       const dataUri = doc.output("datauristring");
       const base64 = dataUri.split(",")[1] ?? "";
-      const pdfName = pkg.csvPath.replace(/\.csv$/i, ".pdf");
-      await api.writeBinaryFile(pdfName, base64);
+      await api.writeInspectionPdf(pkg.directory, base64);
       setLastExportAt(pkg.createdAt);
       setAtfDownloadDue(false);
       setNotice(
@@ -621,8 +620,8 @@ export default function App() {
   }
 
   async function doEncryptedBackup(pass: string) {
-    if (pass.trim().length < 8) {
-      setError("Enter the backup passphrase (min 8 characters) to encrypt.");
+    if (pass.trim().length < 12) {
+      setError("Enter the backup passphrase (min 12 characters) to encrypt.");
       return;
     }
     if (!backupFolder.trim()) {
@@ -668,6 +667,10 @@ export default function App() {
     }
     if (!confirmRestore) {
       setError("Check the confirmation box — restore replaces the live bound book.");
+      return;
+    }
+    if (restorePassphrase.trim().length < 12) {
+      setError("Enter the passphrase used for that backup (min 12 characters).");
       return;
     }
     try {
@@ -1680,7 +1683,7 @@ export default function App() {
             <p className="lede">
               Live bound book stays on this PC under Local AppData (not OneDrive). The encrypted
               backup (<code>.rfbk</code>) is the copy you put in a OneDrive or Google Drive sync
-              folder. Choose the folder below, enter a passphrase (8+ characters), then run backup.
+              folder. Choose the folder below, enter a passphrase (12+ characters), then run backup.
             </p>
             {dbPath && (
               <p className="lede">
@@ -1734,7 +1737,7 @@ export default function App() {
                     type="password"
                     value={passphrase}
                     onChange={(e) => setPassphrase(e.target.value)}
-                    placeholder="min 8 characters"
+                    placeholder="min 12 characters"
                     autoComplete="new-password"
                   />
                 </div>

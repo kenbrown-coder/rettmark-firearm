@@ -206,10 +206,10 @@ pub fn wipe_sample_demo(db: &AppDb) -> Result<SampleDemoStatus> {
     }
     {
         let conn = db.conn.lock().unwrap();
+        // Only delete SAMPLE- serials — never wipe live lines that merely mention the demo note.
         conn.execute(
-            "DELETE FROM bound_book_entry
-             WHERE serial_number LIKE ?1 OR IFNULL(notes,'') LIKE ?2",
-            rusqlite::params![format!("{SAMPLE_SERIAL_PREFIX}%"), format!("%{SAMPLE_NOTE_TAG}%")],
+            "DELETE FROM bound_book_entry WHERE serial_number LIKE ?1",
+            rusqlite::params![format!("{SAMPLE_SERIAL_PREFIX}%")],
         )?;
     }
     db.set_setting("sample_demo_loaded", "0")?;

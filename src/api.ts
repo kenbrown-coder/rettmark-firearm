@@ -32,10 +32,10 @@ const useDemo = () => isBrowserDemo();
 export const api = {
   getDbStatus: () =>
     useDemo() ? browserDemoApi.getDbStatus() : invoke<DbStatus>("get_db_status"),
-  openOrCreateDb: (customPath?: string | null) =>
+  openOrCreateDb: () =>
     useDemo()
       ? browserDemoApi.openOrCreateDb()
-      : invoke<DbStatus>("open_or_create_db", { customPath: customPath ?? null }),
+      : invoke<DbStatus>("open_or_create_db"),
   getLicense: () =>
     useDemo() ? browserDemoApi.getLicense() : invoke<License | null>("get_license"),
   saveLicense: (input: LicenseInput) =>
@@ -97,10 +97,10 @@ export const api = {
     useDemo()
       ? browserDemoApi.exportInspectionPackage(destDir)
       : invoke<InspectionPackageResult>("export_inspection_package", { destDir }),
-  writeBinaryFile: (destPath: string, dataBase64: string) =>
+  writeInspectionPdf: (packageDir: string, dataBase64: string) =>
     useDemo()
-      ? browserDemoApi.writeBinaryFile()
-      : invoke<void>("write_binary_file", { destPath, dataBase64 }),
+      ? browserDemoApi.writeInspectionPdf()
+      : invoke<string>("write_inspection_pdf", { packageDir, dataBase64 }),
   listEntriesForPrint: (correctionView?: string) =>
     useDemo()
       ? browserDemoApi.listEntriesForPrint()

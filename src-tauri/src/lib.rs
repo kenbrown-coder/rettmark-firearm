@@ -5,6 +5,7 @@ mod db;
 mod db_tests;
 mod export;
 mod models;
+mod path_guard;
 mod sample;
 
 use commands::DbState;
@@ -13,9 +14,7 @@ use std::sync::Mutex;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .manage(DbState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             commands::get_db_status,
@@ -35,7 +34,7 @@ pub fn run() {
             commands::export_csv,
             commands::export_ascii,
             commands::export_inspection_package,
-            commands::write_binary_file,
+            commands::write_inspection_pdf,
             commands::list_entries_for_print,
             commands::find_open_by_serial,
             commands::get_sample_demo_status,
@@ -55,9 +54,7 @@ pub fn smoke_encrypted_backup(
     use chrono::Utc;
     use std::fs;
 
-    if passphrase.trim().len() < 8 {
-        return Err("Passphrase must be at least 8 characters".into());
-    }
+    backup::require_passphrase(passphrase.trim()).map_err(|e| e.to_string())?;
     fs::create_dir_all(dest_folder).map_err(|e| e.to_string())?;
     let db = db::AppDb::open(db_path.to_path_buf()).map_err(|e| e.to_string())?;
     let stamp = Utc::now().format("%Y%m%d-%H%M%S");
@@ -67,14 +64,17 @@ pub fn smoke_encrypted_backup(
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
             .map_err(|e| e.to_string())?;
-        let dest_sql = snap.display().to_string().replace('\'', "''");
+        let dest_sql = snap.display().to_string();
+        if dest_sql.contains('\'') {
+            return Err("Snapshot path must not contain quotes".into());
+        }
         let _ = fs::remove_file(&snap);
         conn.execute_batch(&format!("VACUUM INTO '{dest_sql}';"))
             .map_err(|e| format!("snapshot: {e}"))?;
     }
     let _bytes =
         backup::encrypt_file_to(&snap, &dest, passphrase.trim()).map_err(|e| e.to_string())?;
-    let _ = fs::remove_file(&snap);
+    path_guard::shred_temp_file(&snap);
     if !dest.exists() {
         return Err(format!("backup missing at {}", dest.display()));
     }

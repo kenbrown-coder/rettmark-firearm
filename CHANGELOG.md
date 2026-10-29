@@ -2,6 +2,20 @@
 
 All notable releases of **Rettmark Bound Book** (Windows desktop).
 
+## 0.1.3 — 2026-10-29
+
+### Security
+- Removed unrestricted `write_binary_file` IPC; inspection PDF writes only into a verified package folder (`MANIFEST.txt` + PDF magic check).
+- Dropped unused Tauri `fs` and `opener` plugins and the previous full-filesystem `fs:scope`.
+- Bound book DB open no longer accepts a caller-supplied path (local AppData only).
+- Export / backup / restore paths reject relative paths and `..` traversal; restore requires `.rfbk`.
+- Backup passphrase minimum raised to **12** characters; AES key material zeroized after use.
+- Plaintext backup/restore snapshots use app Local AppData `tmp/` and are overwrite-shredded after use; pre-restore safety copies go under `pre-restore/`.
+- SAMPLE wipe deletes only `SAMPLE-` serials (not live lines that merely mention the demo note).
+- Browser-demo mode is compile-gated to Vite **DEV** only.
+- Content Security Policy enabled for the WebView.
+- Upgraded `jspdf` to 4.2.1 (clears known critical/high advisories in the previous 3.x line).
+
 ## 0.1.2 — 2026-10-28
 
 ### Fixed

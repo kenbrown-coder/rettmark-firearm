@@ -209,7 +209,12 @@ function seedSample() {
 }
 
 export function isBrowserDemo(): boolean {
-  return typeof window !== "undefined" && !(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  // Never activate the in-memory demo in production builds (Vite `import.meta.env.DEV`).
+  if (!import.meta.env.DEV) return false;
+  return (
+    typeof window !== "undefined" &&
+    !(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+  );
 }
 
 function filterEntries(query: SearchQuery): BoundBookEntry[] {
@@ -349,7 +354,7 @@ export const browserDemoApi = {
       createdAt,
     };
   },
-  writeBinaryFile: async () => {},
+  writeInspectionPdf: async () => "demo.pdf",
   listEntriesForPrint: async () => filterEntries({ correctionView: "corrected" }),
   findOpenBySerial: async (serial: string) =>
     entries.filter(

@@ -1,20 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window — dialog only; no broad FS/opener",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default",
-    "dialog:default",
-    "fs:default",
-    "fs:allow-write-text-file",
-    "fs:allow-write-file",
-    "fs:allow-mkdir",
-    "fs:allow-exists",
-    {
-      "identifier": "fs:scope",
-      "allow": [{ "path": "**" }]
-    }
+    "dialog:default"
   ]
 }

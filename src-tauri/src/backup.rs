@@ -5,17 +5,26 @@ use argon2::{Argon2, ParamsBuilder};
 use rand::RngExt;
 use std::fs;
 use std::path::Path;
+use zeroize::Zeroize;
 
 /// File format: magic(8) | salt(16) | nonce(12) | ciphertext
 const MAGIC: &[u8; 8] = b"RFBK1AES";
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 12;
 
-pub fn encrypt_file_to(src: &Path, dest: &Path, passphrase: &str) -> Result<u64> {
-    if passphrase.trim().len() < 8 {
-        bail!("Backup passphrase must be at least 8 characters");
+/// Minimum passphrase length for encrypted backups (local threat model).
+pub const MIN_PASSPHRASE_LEN: usize = 12;
+
+pub fn require_passphrase(passphrase: &str) -> Result<()> {
+    if passphrase.trim().chars().count() < MIN_PASSPHRASE_LEN {
+        bail!("Backup passphrase must be at least {MIN_PASSPHRASE_LEN} characters");
     }
-    let plaintext = fs::read(src).context("read database for backup")?;
+    Ok(())
+}
+
+pub fn encrypt_file_to(src: &Path, dest: &Path, passphrase: &str) -> Result<u64> {
+    require_passphrase(passphrase)?;
+    let mut plaintext = fs::read(src).context("read database for backup")?;
     let mut salt = [0u8; SALT_LEN];
     let mut nonce_bytes = [0u8; NONCE_LEN];
     {
@@ -24,27 +33,33 @@ pub fn encrypt_file_to(src: &Path, dest: &Path, passphrase: &str) -> Result<u64>
         rng.fill(&mut nonce_bytes);
     }
 
-    let key_bytes = derive_key(passphrase.as_bytes(), &salt)?;
-    let key = Key::<Aes256Gcm>::from(key_bytes);
-    let cipher = Aes256Gcm::new(&key);
-    let nonce = Nonce::from(nonce_bytes);
-    let ciphertext = cipher
-        .encrypt(&nonce, plaintext.as_ref())
-        .map_err(|e| anyhow::anyhow!("encrypt failed: {e}"))?;
+    let mut key_bytes = derive_key(passphrase.as_bytes(), &salt)?;
+    let result = (|| {
+        let key = Key::<Aes256Gcm>::from(key_bytes);
+        let cipher = Aes256Gcm::new(&key);
+        let nonce = Nonce::from(nonce_bytes);
+        let ciphertext = cipher
+            .encrypt(&nonce, plaintext.as_ref())
+            .map_err(|e| anyhow::anyhow!("encrypt failed: {e}"))?;
 
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut out = Vec::with_capacity(MAGIC.len() + SALT_LEN + NONCE_LEN + ciphertext.len());
-    out.extend_from_slice(MAGIC);
-    out.extend_from_slice(&salt);
-    out.extend_from_slice(&nonce_bytes);
-    out.extend_from_slice(&ciphertext);
-    fs::write(dest, &out).context("write encrypted backup")?;
-    Ok(out.len() as u64)
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut out = Vec::with_capacity(MAGIC.len() + SALT_LEN + NONCE_LEN + ciphertext.len());
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&salt);
+        out.extend_from_slice(&nonce_bytes);
+        out.extend_from_slice(&ciphertext);
+        fs::write(dest, &out).context("write encrypted backup")?;
+        Ok(out.len() as u64)
+    })();
+    key_bytes.zeroize();
+    plaintext.zeroize();
+    result
 }
 
 pub fn decrypt_file_to(src: &Path, dest: &Path, passphrase: &str) -> Result<()> {
+    require_passphrase(passphrase)?;
     let data = fs::read(src).context("read encrypted backup")?;
     if data.len() < MAGIC.len() + SALT_LEN + NONCE_LEN + 16 {
         bail!("Backup file too short or corrupt");
@@ -58,18 +73,23 @@ pub fn decrypt_file_to(src: &Path, dest: &Path, passphrase: &str) -> Result<()> 
         .map_err(|_| anyhow::anyhow!("bad nonce"))?;
     let ciphertext = &data[8 + SALT_LEN + NONCE_LEN..];
 
-    let key_bytes = derive_key(passphrase.as_bytes(), salt)?;
-    let key = Key::<Aes256Gcm>::from(key_bytes);
-    let cipher = Aes256Gcm::new(&key);
-    let nonce = Nonce::from(nonce_bytes);
-    let plaintext = cipher
-        .decrypt(&nonce, ciphertext)
-        .map_err(|_| anyhow::anyhow!("Decryption failed — wrong passphrase or corrupt file"))?;
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(dest, plaintext)?;
-    Ok(())
+    let mut key_bytes = derive_key(passphrase.as_bytes(), salt)?;
+    let result = (|| {
+        let key = Key::<Aes256Gcm>::from(key_bytes);
+        let cipher = Aes256Gcm::new(&key);
+        let nonce = Nonce::from(nonce_bytes);
+        let mut plaintext = cipher
+            .decrypt(&nonce, ciphertext)
+            .map_err(|_| anyhow::anyhow!("Decryption failed — wrong passphrase or corrupt file"))?;
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(dest, &plaintext)?;
+        plaintext.zeroize();
+        Ok(())
+    })();
+    key_bytes.zeroize();
+    result
 }
 
 pub fn looks_like_sqlite(path: &Path) -> Result<bool> {
@@ -118,8 +138,8 @@ mod tests {
         let mut bytes = b"SQLite format 3\0".to_vec();
         bytes.extend_from_slice(b"rettmark-payload");
         std::fs::write(&src, &bytes).unwrap();
-        encrypt_file_to(&src, &enc, "test-pass-123").unwrap();
-        decrypt_file_to(&enc, &out, "test-pass-123").unwrap();
+        encrypt_file_to(&src, &enc, "test-passphrase-ok").unwrap();
+        decrypt_file_to(&enc, &out, "test-passphrase-ok").unwrap();
         assert_eq!(std::fs::read(&out).unwrap(), bytes);
         assert!(looks_like_sqlite(&out).unwrap());
     }

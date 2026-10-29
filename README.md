@@ -134,7 +134,7 @@ Do **not** mix SAMPLE/DEMO rows into a book that already has real lines — the 
 
 1. Open **Backup & license** (or click **Backup now** in the header).
 2. Click **Choose folder…** and pick a folder that syncs with OneDrive or Google Drive.
-3. Choose a strong **passphrase** (8+ characters). The passphrase is **not** stored in plaintext; enter it each time you run a backup.
+3. Choose a strong **passphrase** (12+ characters). The passphrase is **not** stored in plaintext; enter it each time you run a backup.
 4. Click **Run encrypted backup now** (or use the **Backup now** dialog).
 
 The app writes a `.rfbk` file: Argon2id-derived key + AES-256-GCM ciphertext of the SQLite database. Cloud sync then copies the already-encrypted file.

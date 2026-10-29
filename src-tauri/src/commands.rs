@@ -2,6 +2,7 @@ use crate::backup;
 use crate::db::AppDb;
 use crate::export;
 use crate::models::*;
+use crate::path_guard;
 use crate::sample::{self, SampleDemoStatus};
 use chrono::{DateTime, Duration, Utc};
 use std::fs;
@@ -66,6 +67,11 @@ fn migrate_sqlite_to_local(legacy: &Path, local_db: &Path) -> Result<(), String>
 
 /// Consistent snapshot of the open DB into `dest` (Windows-safe; avoids reading a locked .sqlite).
 fn snapshot_db_to(db: &AppDb, dest: &Path) -> Result<(), String> {
+    path_guard::require_absolute_no_traversal(dest).map_err(|e| e.to_string())?;
+    let dest_str = dest.display().to_string();
+    if dest_str.contains('\'') {
+        return Err("Snapshot path must not contain quotes".into());
+    }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -73,8 +79,7 @@ fn snapshot_db_to(db: &AppDb, dest: &Path) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
         .map_err(|e| format!("wal checkpoint before backup: {e}"))?;
-    let dest_sql = dest.display().to_string().replace('\'', "''");
-    conn.execute_batch(&format!("VACUUM INTO '{dest_sql}';"))
+    conn.execute_batch(&format!("VACUUM INTO '{dest_str}';"))
         .map_err(|e| format!("snapshot database for backup: {e}"))?;
     Ok(())
 }
@@ -126,12 +131,9 @@ pub fn get_db_status(state: State<'_, DbState>, app: AppHandle) -> Result<DbStat
 pub fn open_or_create_db(
     state: State<'_, DbState>,
     app: AppHandle,
-    custom_path: Option<String>,
 ) -> Result<DbStatus, String> {
-    let path = match custom_path {
-        Some(p) if !p.trim().is_empty() => PathBuf::from(p),
-        _ => default_db_path(&app)?,
-    };
+    // Bound book always lives under app local data — no caller-supplied path (path traversal).
+    let path = default_db_path(&app)?;
     let db = AppDb::open(path).map_err(|e| e.to_string())?;
     let status = db.status().map_err(|e| e.to_string())?;
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
@@ -231,11 +233,9 @@ pub fn set_backup_folder(state: State<'_, DbState>, folder: String) -> Result<()
 
 #[tauri::command]
 pub fn set_backup_passphrase(state: State<'_, DbState>, passphrase: String) -> Result<(), String> {
-    if passphrase.trim().len() < 8 {
-        return Err("Passphrase must be at least 8 characters".into());
-    }
+    backup::require_passphrase(passphrase.trim()).map_err(|e| e.to_string())?;
     // Marker only — passphrase is re-entered for each backup (not persisted in plaintext).
-    let _ = passphrase;
+    drop(passphrase);
     with_db(&state, |db| {
         db.set_setting("backup_passphrase_hash", "configured")
             .map_err(|e| e.to_string())?;
@@ -246,12 +246,11 @@ pub fn set_backup_passphrase(state: State<'_, DbState>, passphrase: String) -> R
 #[tauri::command]
 pub fn run_encrypted_backup(
     state: State<'_, DbState>,
+    app: AppHandle,
     passphrase: String,
     folder: Option<String>,
 ) -> Result<BackupResult, String> {
-    if passphrase.trim().len() < 8 {
-        return Err("Passphrase must be at least 8 characters".into());
-    }
+    backup::require_passphrase(passphrase.trim()).map_err(|e| e.to_string())?;
     with_db(&state, |db| {
         let folder = folder
             .filter(|s| !s.trim().is_empty())
@@ -260,7 +259,8 @@ pub fn run_encrypted_backup(
                 "Choose a backup folder first (OneDrive or Google Drive sync path)".to_string()
             })?;
         let folder = folder.trim().to_string();
-        let folder_path = PathBuf::from(&folder);
+        let folder_path = path_guard::require_absolute_no_traversal(Path::new(&folder))
+            .map_err(|e| e.to_string())?;
         if !folder_path.exists() {
             fs::create_dir_all(&folder_path).map_err(|e| {
                 format!("Could not create backup folder '{folder}': {e}")
@@ -272,14 +272,20 @@ pub fn run_encrypted_backup(
 
         let stamp = Utc::now().format("%Y%m%d-%H%M%S");
         let dest = folder_path.join(format!("rettmark-bound-book-{stamp}.rfbk"));
-        // Windows locks the live .sqlite while the app is open — snapshot via VACUUM INTO first.
-        let snap = std::env::temp_dir().join(format!("rettmark-backup-snap-{stamp}.sqlite"));
+        // Snapshot under app local data (not world-readable %TEMP%), then shred.
+        let snap_dir = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("tmp");
+        fs::create_dir_all(&snap_dir).map_err(|e| e.to_string())?;
+        let snap = snap_dir.join(format!("rettmark-backup-snap-{stamp}.sqlite"));
         snapshot_db_to(db, &snap)?;
         let bytes = backup::encrypt_file_to(&snap, &dest, passphrase.trim()).map_err(|e| {
-            let _ = fs::remove_file(&snap);
+            path_guard::shred_temp_file(&snap);
             format!("Encrypted backup failed: {e}")
         })?;
-        let _ = fs::remove_file(&snap);
+        path_guard::shred_temp_file(&snap);
 
         if !dest.exists() {
             return Err(format!(
@@ -319,12 +325,19 @@ pub fn restore_from_backup(
     backup_path: String,
     passphrase: String,
 ) -> Result<RestoreResult, String> {
-    if passphrase.trim().len() < 8 {
-        return Err("Passphrase must be at least 8 characters".into());
-    }
-    let backup_path = PathBuf::from(backup_path.trim());
+    backup::require_passphrase(passphrase.trim()).map_err(|e| e.to_string())?;
+    let backup_path = path_guard::require_absolute_no_traversal(Path::new(backup_path.trim()))
+        .map_err(|e| e.to_string())?;
     if !backup_path.exists() {
         return Err("Backup file not found".into());
+    }
+    if backup_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("rfbk"))
+        != Some(true)
+    {
+        return Err("Restore file must be a .rfbk encrypted backup".into());
     }
 
     let live_path = {
@@ -340,24 +353,28 @@ pub fn restore_from_backup(
     };
 
     let stamp = Utc::now().format("%Y%m%d-%H%M%S");
-    let parent = live_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let temp_decrypted = parent.join(format!("restore-temp-{stamp}.sqlite"));
+    let local_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?;
+    let tmp_dir = local_dir.join("tmp");
+    let safety_dir = local_dir.join("pre-restore");
+    fs::create_dir_all(&tmp_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&safety_dir).map_err(|e| e.to_string())?;
+    let temp_decrypted = tmp_dir.join(format!("restore-temp-{stamp}.sqlite"));
 
     backup::decrypt_file_to(&backup_path, &temp_decrypted, passphrase.trim())
         .map_err(|e| e.to_string())?;
 
     if !backup::looks_like_sqlite(&temp_decrypted).map_err(|e| e.to_string())? {
-        let _ = fs::remove_file(&temp_decrypted);
+        path_guard::shred_temp_file(&temp_decrypted);
         return Err("Decrypted file is not a SQLite database".into());
     }
 
     // Validate schema without enabling WAL on the temp file
     {
         let probe = rusqlite::Connection::open(&temp_decrypted).map_err(|e| {
-            let _ = fs::remove_file(&temp_decrypted);
+            path_guard::shred_temp_file(&temp_decrypted);
             e.to_string()
         })?;
         let ok: bool = probe
@@ -369,7 +386,7 @@ pub fn restore_from_backup(
             .unwrap_or(false);
         if !ok {
             drop(probe);
-            let _ = fs::remove_file(&temp_decrypted);
+            path_guard::shred_temp_file(&temp_decrypted);
             return Err("Backup is not a Rettmark bound-book database".into());
         }
     }
@@ -382,17 +399,20 @@ pub fn restore_from_backup(
 
     let mut safety_copy_path: Option<String> = None;
     if live_path.exists() {
-        let safety = parent.join(format!("bound-book.pre-restore-{stamp}.sqlite"));
+        let safety = safety_dir.join(format!("bound-book.pre-restore-{stamp}.sqlite"));
         fs::copy(&live_path, &safety).map_err(|e| {
+            path_guard::shred_temp_file(&temp_decrypted);
             format!("Could not create safety copy of current book before restore: {e}")
         })?;
         safety_copy_path = Some(safety.display().to_string());
     }
 
     remove_sidecar_files(&live_path);
-    fs::copy(&temp_decrypted, &live_path)
-        .map_err(|e| format!("Could not replace live database: {e}"))?;
-    let _ = fs::remove_file(&temp_decrypted);
+    fs::copy(&temp_decrypted, &live_path).map_err(|e| {
+        path_guard::shred_temp_file(&temp_decrypted);
+        format!("Could not replace live database: {e}")
+    })?;
+    path_guard::shred_temp_file(&temp_decrypted);
     remove_sidecar_files(&live_path);
 
     let db = AppDb::open(live_path.clone()).map_err(|e| e.to_string())?;
@@ -427,16 +447,32 @@ pub fn restore_from_backup(
 
 #[tauri::command]
 pub fn export_csv(state: State<'_, DbState>, dest_path: String) -> Result<ExportResult, String> {
-    with_db(&state, |db| {
-        export::export_csv(db, &PathBuf::from(dest_path)).map_err(|e| e.to_string())
-    })
+    let dest = path_guard::require_absolute_no_traversal(Path::new(dest_path.trim()))
+        .map_err(|e| e.to_string())?;
+    if dest
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("csv"))
+        != Some(true)
+    {
+        return Err("CSV export path must end in .csv".into());
+    }
+    with_db(&state, |db| export::export_csv(db, &dest).map_err(|e| e.to_string()))
 }
 
 #[tauri::command]
 pub fn export_ascii(state: State<'_, DbState>, dest_path: String) -> Result<ExportResult, String> {
-    with_db(&state, |db| {
-        export::export_ascii(db, &PathBuf::from(dest_path)).map_err(|e| e.to_string())
-    })
+    let dest = path_guard::require_absolute_no_traversal(Path::new(dest_path.trim()))
+        .map_err(|e| e.to_string())?;
+    if dest
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("txt"))
+        != Some(true)
+    {
+        return Err("ASCII export path must end in .txt".into());
+    }
+    with_db(&state, |db| export::export_ascii(db, &dest).map_err(|e| e.to_string()))
 }
 
 #[tauri::command]
@@ -444,24 +480,66 @@ pub fn export_inspection_package(
     state: State<'_, DbState>,
     dest_dir: String,
 ) -> Result<InspectionPackageResult, String> {
+    let base = path_guard::require_absolute_no_traversal(Path::new(dest_dir.trim()))
+        .map_err(|e| e.to_string())?;
+    if !base.is_dir() {
+        return Err("Inspection package parent must be an existing folder".into());
+    }
     with_db(&state, |db| {
-        let base = PathBuf::from(dest_dir.trim());
         let package_dir = export::package_dir_with_stamp(&base);
         export::export_inspection_package(db, &package_dir).map_err(|e| e.to_string())
     })
 }
 
+/// Write the inspection PDF **only** into an existing Rettmark inspection package folder.
+/// Replaces the old unrestricted `write_binary_file` IPC.
 #[tauri::command]
-pub fn write_binary_file(dest_path: String, data_base64: String) -> Result<(), String> {
+pub fn write_inspection_pdf(
+    package_dir: String,
+    data_base64: String,
+) -> Result<String, String> {
     use base64::Engine;
+    let dir = path_guard::require_absolute_no_traversal(Path::new(package_dir.trim()))
+        .map_err(|e| e.to_string())?;
+    if !dir.is_dir() {
+        return Err("Package directory not found".into());
+    }
+    let manifest = dir.join("MANIFEST.txt");
+    if !manifest.is_file() {
+        return Err(
+            "Refusing write: folder is not a Rettmark inspection package (missing MANIFEST.txt)"
+                .into(),
+        );
+    }
+    // Prefer PDF name matching an existing package CSV.
+    let mut pdf_name = format!(
+        "rettmark-ad-{}.pdf",
+        Utc::now().format("%Y%m%d-%H%M%S")
+    );
+    if let Ok(rd) = fs::read_dir(&dir) {
+        for ent in rd.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("rettmark-ad-") && name.ends_with(".csv") {
+                pdf_name = name.trim_end_matches(".csv").to_string() + ".pdf";
+                break;
+            }
+        }
+    }
+    let dest = path_guard::require_under_parent(&dir, &dir.join(&pdf_name))
+        .map_err(|e| e.to_string())?;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64.trim())
         .map_err(|e| format!("invalid base64: {e}"))?;
-    let path = PathBuf::from(dest_path);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    if bytes.len() > 80 * 1024 * 1024 {
+        return Err("PDF payload too large".into());
     }
-    fs::write(path, bytes).map_err(|e| e.to_string())
+    // Basic PDF magic check (avoid writing arbitrary binaries)
+    if bytes.len() < 5 || &bytes[0..5] != b"%PDF-" {
+        return Err("Payload is not a PDF".into());
+    }
+    fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+    Ok(dest.display().to_string())
 }
 
 #[tauri::command]
