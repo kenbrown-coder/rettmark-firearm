@@ -22,7 +22,7 @@ Local-first desktop app for **Rettmark Firearms** (Ken Brown) to keep the dealer
 - **Search** by serial, manufacturer/importer, name, address, 4473 #, acquisition date range; open-inventory filter; original / corrected / both views
 - **Corrections** without destroying the original (Ruling 2016-1 method a)
 - **Print / PDF / CSV / ASCII** export in acquisition-date order
-- **Inspection mode** (read-only paper-column view) and one-click **inspection package** (PDF + CSV + ASCII + MANIFEST)
+- **Inspection mode** (read-only paper-column view) and **Export for ATF inspection** (unencrypted PDF + CSV + ASCII + MANIFEST)
 - **SAMPLE/DEMO book** — one-click fictional lines (clearly marked); wipe anytime
 - **Encrypted backup** (AES-256-GCM + Argon2id passphrase) to a user-chosen sync folder (OneDrive or Google Drive), with restore
 

@@ -511,7 +511,7 @@ export default function App() {
       setLastExportAt(pkg.createdAt);
       setAtfDownloadDue(false);
       setNotice(
-        `Inspection package written (${pkg.entryCount} lines): ${pkg.directory} (PDF + CSV + ASCII + MANIFEST)`,
+        `ATF inspection package written (${pkg.entryCount} lines): ${pkg.directory} (PDF + CSV + ASCII + MANIFEST)`,
       );
     } catch (err) {
       setError(String(err));
@@ -1638,7 +1638,7 @@ export default function App() {
               Produce an unencrypted premises download sorted by acquisition date. Keep the last
               download until the next (Ruling 2016-1). Prefer at least semiannual for local
               systems; print on ATF request within 24 hours. For a full handoff folder, use the
-              inspection package (PDF + CSV + ASCII).
+              ATF inspection package (unencrypted PDF + CSV + ASCII).
             </p>
             <div className="form-actions">
               <button
@@ -1647,7 +1647,7 @@ export default function App() {
                 onClick={() => void exportInspectionPackage()}
                 disabled={busy}
               >
-                Export inspection package
+                Export for ATF inspection
               </button>
               <button className="btn secondary" type="button" onClick={exportPdf} disabled={busy}>
                 Save PDF only

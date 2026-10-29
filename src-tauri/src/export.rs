@@ -186,12 +186,20 @@ pub fn export_inspection_package(db: &AppDb, dest_dir: &Path) -> Result<Inspecti
     let created_at = Utc::now().to_rfc3339();
 
     let mut m = File::create(&manifest_path)?;
-    writeln!(m, "Rettmark Firearms — Inspection / OOB export package")?;
+    writeln!(m, "Rettmark Firearms — ATF inspection / premises download package")?;
     writeln!(m, "Created: {created_at}")?;
     writeln!(m, "Format basis: 27 CFR 478.125(e); ATF Ruling 2016-1")?;
     writeln!(
         m,
+        "Contents: unencrypted PDF (paper columns), CSV, and ASCII text of dealer A&D"
+    )?;
+    writeln!(
+        m,
         "View: effective (corrected) A&D lines, sorted by acquisition date"
+    )?;
+    writeln!(
+        m,
+        "Use: print or provide this folder for ATF inspection / premises download"
     )?;
     if let Some(lic) = &license {
         writeln!(m, "Business: {}", lic.business_name)?;

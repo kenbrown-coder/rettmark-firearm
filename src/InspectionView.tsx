@@ -44,7 +44,7 @@ export function InspectionView({
         </div>
         <div className="form-actions no-print">
           <button className="btn" type="button" onClick={onExportPackage} disabled={busy}>
-            Export inspection package
+            Export for ATF inspection
           </button>
           <button className="btn secondary" type="button" onClick={onPrint}>
             Print inspection view

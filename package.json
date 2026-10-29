@@ -11,7 +11,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "generate:atf-sample-package": "node scripts/generate-sample-atf-package.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
