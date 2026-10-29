@@ -187,4 +187,32 @@ mod tests {
         assert!(!wiped.loaded);
         assert_eq!(wiped.sample_count, 0);
     }
+
+    #[test]
+    fn encrypted_backup_while_db_connection_held() {
+        // Regression: Windows locks the live .sqlite while open; backup must snapshot first.
+        let db = temp_db();
+        crate::sample::load_sample_demo(&db).unwrap();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let snap = std::env::temp_dir().join(format!("rettmark-snap-{nanos}.sqlite"));
+        let enc = std::env::temp_dir().join(format!("rettmark-snap-{nanos}.rfbk"));
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .unwrap();
+            let dest_sql = snap.display().to_string().replace('\'', "''");
+            conn.execute_batch(&format!("VACUUM INTO '{dest_sql}';"))
+                .unwrap();
+        }
+        // Direct read of the live path should still be OK after snapshot; encrypt the snapshot.
+        let bytes =
+            crate::backup::encrypt_file_to(&snap, &enc, "test-pass-123").expect("encrypt snapshot");
+        assert!(bytes > 32);
+        assert!(enc.exists());
+        let _ = std::fs::remove_file(&snap);
+        let _ = std::fs::remove_file(&enc);
+    }
 }

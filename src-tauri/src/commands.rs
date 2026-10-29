@@ -22,12 +22,61 @@ where
     f(db)
 }
 
+/// Live bound book stays on the local machine (`%LOCALAPPDATA%` on Windows), not OneDrive.
+/// Legacy Roaming `%APPDATA%` DBs are migrated once into Local on first open.
 fn default_db_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
+    let local_dir = app
         .path()
-        .app_data_dir()
+        .app_local_data_dir()
         .map_err(|e| e.to_string())?;
-    Ok(dir.join("bound-book.sqlite"))
+    fs::create_dir_all(&local_dir).map_err(|e| format!("create local app data dir: {e}"))?;
+    let local_db = local_dir.join("bound-book.sqlite");
+
+    if !local_db.exists() {
+        if let Ok(roaming_dir) = app.path().app_data_dir() {
+            let legacy = roaming_dir.join("bound-book.sqlite");
+            if legacy.exists() {
+                migrate_sqlite_to_local(&legacy, &local_db)?;
+            }
+        }
+    }
+
+    Ok(local_db)
+}
+
+fn migrate_sqlite_to_local(legacy: &Path, local_db: &Path) -> Result<(), String> {
+    if let Some(parent) = local_db.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let conn = rusqlite::Connection::open(legacy)
+        .map_err(|e| format!("open legacy Roaming DB for migrate: {e}"))?;
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .map_err(|e| format!("checkpoint legacy DB: {e}"))?;
+    let dest_sql = local_db.display().to_string().replace('\'', "''");
+    let _ = fs::remove_file(local_db);
+    conn.execute_batch(&format!("VACUUM INTO '{dest_sql}';"))
+        .map_err(|e| format!("migrate DB to Local AppData (VACUUM INTO): {e}"))?;
+    drop(conn);
+
+    let archived = legacy.with_extension("sqlite.migrated-from-roaming");
+    let _ = fs::rename(legacy, &archived);
+    remove_sidecar_files(legacy);
+    Ok(())
+}
+
+/// Consistent snapshot of the open DB into `dest` (Windows-safe; avoids reading a locked .sqlite).
+fn snapshot_db_to(db: &AppDb, dest: &Path) -> Result<(), String> {
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let _ = fs::remove_file(dest);
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .map_err(|e| format!("wal checkpoint before backup: {e}"))?;
+    let dest_sql = dest.display().to_string().replace('\'', "''");
+    conn.execute_batch(&format!("VACUUM INTO '{dest_sql}';"))
+        .map_err(|e| format!("snapshot database for backup: {e}"))?;
+    Ok(())
 }
 
 fn backup_is_due(last_backup_at: &Option<String>) -> bool {
@@ -200,23 +249,45 @@ pub fn run_encrypted_backup(
     passphrase: String,
     folder: Option<String>,
 ) -> Result<BackupResult, String> {
+    if passphrase.trim().len() < 8 {
+        return Err("Passphrase must be at least 8 characters".into());
+    }
     with_db(&state, |db| {
         let folder = folder
             .filter(|s| !s.trim().is_empty())
             .or_else(|| db.get_setting("backup_folder").ok().flatten())
             .ok_or_else(|| {
-                "Choose a backup folder (OneDrive or Google Drive sync path)".to_string()
+                "Choose a backup folder first (OneDrive or Google Drive sync path)".to_string()
             })?;
-        let stamp = Utc::now().format("%Y%m%d-%H%M%S");
-        let dest = PathBuf::from(&folder).join(format!("rettmark-bound-book-{stamp}.rfbk"));
-        // Checkpoint WAL so the backup file is consistent
-        {
-            let conn = db.conn.lock().map_err(|e| e.to_string())?;
-            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
-                .map_err(|e| e.to_string())?;
+        let folder = folder.trim().to_string();
+        let folder_path = PathBuf::from(&folder);
+        if !folder_path.exists() {
+            fs::create_dir_all(&folder_path).map_err(|e| {
+                format!("Could not create backup folder '{folder}': {e}")
+            })?;
         }
-        let bytes = backup::encrypt_file_to(db.db_path(), &dest, passphrase.trim())
-            .map_err(|e| e.to_string())?;
+        if !folder_path.is_dir() {
+            return Err(format!("Backup path is not a folder: {folder}"));
+        }
+
+        let stamp = Utc::now().format("%Y%m%d-%H%M%S");
+        let dest = folder_path.join(format!("rettmark-bound-book-{stamp}.rfbk"));
+        // Windows locks the live .sqlite while the app is open — snapshot via VACUUM INTO first.
+        let snap = std::env::temp_dir().join(format!("rettmark-backup-snap-{stamp}.sqlite"));
+        snapshot_db_to(db, &snap)?;
+        let bytes = backup::encrypt_file_to(&snap, &dest, passphrase.trim()).map_err(|e| {
+            let _ = fs::remove_file(&snap);
+            format!("Encrypted backup failed: {e}")
+        })?;
+        let _ = fs::remove_file(&snap);
+
+        if !dest.exists() {
+            return Err(format!(
+                "Backup reported success but file was not found at {}",
+                dest.display()
+            ));
+        }
+
         let created_at = Utc::now().to_rfc3339();
         db.set_setting("backup_folder", &folder)
             .map_err(|e| e.to_string())?;

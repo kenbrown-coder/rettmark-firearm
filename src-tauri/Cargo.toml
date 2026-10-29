@@ -1,6 +1,6 @@
 [package]
 name = "rettmark-firearm"
-version = "0.1.1"
+version = "0.1.2"
 description = "Rettmark Firearms digital FFL A&D bound book"
 authors = ["Ken Brown / Rettmark Firearms"]
 edition = "2021"

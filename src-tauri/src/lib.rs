@@ -45,3 +45,38 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+/// Smoke / tooling: snapshot a DB and write an encrypted `.rfbk` (Windows-safe).
+pub fn smoke_encrypted_backup(
+    db_path: &std::path::Path,
+    dest_folder: &std::path::Path,
+    passphrase: &str,
+) -> Result<std::path::PathBuf, String> {
+    use chrono::Utc;
+    use std::fs;
+
+    if passphrase.trim().len() < 8 {
+        return Err("Passphrase must be at least 8 characters".into());
+    }
+    fs::create_dir_all(dest_folder).map_err(|e| e.to_string())?;
+    let db = db::AppDb::open(db_path.to_path_buf()).map_err(|e| e.to_string())?;
+    let stamp = Utc::now().format("%Y%m%d-%H%M%S");
+    let snap = std::env::temp_dir().join(format!("rettmark-smoke-snap-{stamp}.sqlite"));
+    let dest = dest_folder.join(format!("rettmark-bound-book-{stamp}.rfbk"));
+    {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .map_err(|e| e.to_string())?;
+        let dest_sql = snap.display().to_string().replace('\'', "''");
+        let _ = fs::remove_file(&snap);
+        conn.execute_batch(&format!("VACUUM INTO '{dest_sql}';"))
+            .map_err(|e| format!("snapshot: {e}"))?;
+    }
+    let _bytes =
+        backup::encrypt_file_to(&snap, &dest, passphrase.trim()).map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(&snap);
+    if !dest.exists() {
+        return Err(format!("backup missing at {}", dest.display()));
+    }
+    Ok(dest)
+}

@@ -1678,10 +1678,15 @@ export default function App() {
           <section className="panel">
             <h2>Backup &amp; license</h2>
             <p className="lede">
-              Live copy: local SQLite on this PC. Second copy: AES-encrypted backup file written to
-              a folder you choose (OneDrive or Google Drive sync folder). Encrypt in-app before the
-              file lands in the sync folder.
+              Live bound book stays on this PC under Local AppData (not OneDrive). The encrypted
+              backup (<code>.rfbk</code>) is the copy you put in a OneDrive or Google Drive sync
+              folder. Choose the folder below, enter a passphrase (8+ characters), then run backup.
             </p>
+            {dbPath && (
+              <p className="lede">
+                Live database (local): <code>{dbPath}</code>
+              </p>
+            )}
 
             <h3 className="subhead">SAMPLE/DEMO book</h3>
             <p className="lede">
