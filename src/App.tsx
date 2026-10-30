@@ -1,6 +1,14 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { api, formatFromWhom, formatToWhom } from "./api";
+import { api } from "./api";
+import {
+  AD_COL,
+  AD_GROUP,
+  formatAcquisitionAddressOrLicense,
+  formatAcquisitionName,
+  formatDispositionAddressOrLocator,
+  formatDispositionName,
+} from "./boundBookFormat";
 import {
   acquisitionWarnings,
   dispositionWarnings,
@@ -955,7 +963,9 @@ export default function App() {
           <section className="panel">
             <h2>Bound book</h2>
             <p className="lede">
-              Columns mirror 27 CFR 478.125(e). Open lines (no disposition) are highlighted.
+              Columns mirror 27 CFR 478.125(e) Table 2 — Acquisitions (left) and Dispositions
+              (right), with separate Name and Address columns. Open lines (no disposition) are
+              highlighted.
               Corrections never erase the original entry.
             </p>
             <form className="toolbar no-print" onSubmit={runSearch}>
@@ -1087,20 +1097,35 @@ export default function App() {
               </div>
             ) : (
               <div className="book-scroll">
-                <table className="book-table">
+                <table className="book-table inspection-table">
                   <thead>
-                    <tr>
-                      <th>Line</th>
-                      <th>Manufacturer / Importer</th>
-                      <th>Model</th>
-                      <th>Serial No.</th>
-                      <th>Type</th>
-                      <th>Caliber</th>
-                      <th>Acq. date</th>
-                      <th>From whom received</th>
-                      <th>Disp. date</th>
-                      <th>Name / address / FFL / 4473</th>
-                      <th>Status</th>
+                    <tr className="group-head-row">
+                      <th rowSpan={2} className="th-line">
+                        Line
+                      </th>
+                      <th colSpan={5} className="th-description">
+                        {AD_GROUP.description}
+                      </th>
+                      <th colSpan={3} className="th-acquisitions">
+                        {AD_GROUP.acquisitions}
+                      </th>
+                      <th colSpan={3} className="th-dispositions">
+                        {AD_GROUP.dispositions}
+                      </th>
+                      <th rowSpan={2}>Status</th>
+                    </tr>
+                    <tr className="subhead-row">
+                      <th className="th-description-sub">{AD_COL.manufacturer}</th>
+                      <th className="th-description-sub">{AD_COL.model}</th>
+                      <th className="th-description-sub">{AD_COL.serialNo}</th>
+                      <th className="th-description-sub">{AD_COL.type}</th>
+                      <th className="th-description-sub">{AD_COL.caliberOrGauge}</th>
+                      <th className="th-acq-sub">{AD_COL.receiptDate}</th>
+                      <th className="th-acq-sub">{AD_COL.acquisitionName}</th>
+                      <th className="th-acq-sub">{AD_COL.acquisitionAddressOrLicense}</th>
+                      <th className="th-disp-sub">{AD_COL.dispositionDate}</th>
+                      <th className="th-disp-sub">{AD_COL.dispositionName}</th>
+                      <th className="th-disp-sub">{AD_COL.dispositionAddressOrLocator}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1127,9 +1152,11 @@ export default function App() {
                         <td>{e.firearmType}</td>
                         <td>{e.caliberOrGauge}</td>
                         <td>{e.acquisitionDate}</td>
-                        <td>{formatFromWhom(e)}</td>
+                        <td>{formatAcquisitionName(e)}</td>
+                        <td>{formatAcquisitionAddressOrLicense(e)}</td>
                         <td>{e.dispositionDate ?? ""}</td>
-                        <td>{formatToWhom(e)}</td>
+                        <td>{formatDispositionName(e)}</td>
+                        <td>{formatDispositionAddressOrLocator(e)}</td>
                         <td>
                           <span
                             className={`badge ${

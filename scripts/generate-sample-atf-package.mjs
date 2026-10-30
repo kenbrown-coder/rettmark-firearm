@@ -1,6 +1,9 @@
 /**
  * Generates a SAMPLE/DEMO ATF inspection package (PDF + CSV + ASCII + MANIFEST)
  * without requiring the Tauri GUI. Run: node scripts/generate-sample-atf-package.mjs [outdir]
+ *
+ * Layout: 27 CFR 478.125(e) Table 2 — Acquisitions (left) / Dispositions (right),
+ * separate Name and Address columns (ATF IOI DeSanto feedback).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -31,36 +34,85 @@ const outArg = process.argv[2] || defaultOut;
 const SAMPLE_NOTE =
   "[SAMPLE/DEMO — fictional data only; not a real A&D record]";
 
+const AD_GROUP = {
+  description: "Description of firearm",
+  acquisitions: "Acquisitions",
+  dispositions: "Dispositions",
+};
+
+const AD_COL = {
+  manufacturer:
+    'Manufacturer, importer (if any), or "privately made firearm" (PMF)',
+  model: "Model",
+  serialNo: "Serial No.",
+  type: "Type",
+  caliberOrGauge: "Caliber or gauge",
+  receiptDate: "Date",
+  acquisitionName: "Name",
+  acquisitionAddressOrLicense:
+    "Address of nonlicensee; or license No. of licensee",
+  dispositionDate: "Date",
+  dispositionName: "Name",
+  dispositionAddressOrLocator:
+    "Address of nonlicensee; license No. of licensee; or Form 4473 transaction No. if such forms filed numerically",
+};
+
 function todayMinus(days) {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
 }
 
-function formatFromWhom(e) {
+function formatAcquisitionName(e) {
+  if (e.acquiredFromKind === "opening_inventory") {
+    return `${e.acquiredFromName} (opening inventory)`;
+  }
+  return e.acquiredFromName ?? "";
+}
+
+function formatAcquisitionAddressOrLicense(e) {
   switch (e.acquiredFromKind) {
     case "licensee":
-      return `${e.acquiredFromName} — FFL ${e.acquiredFromFfl ?? ""}`.trim();
+      return e.acquiredFromFfl ? `FFL ${e.acquiredFromFfl}` : "";
     case "opening_inventory":
-      return `${e.acquiredFromName} (opening inventory)`;
+      return "";
     default:
-      return [e.acquiredFromName, e.acquiredFromAddress].filter(Boolean).join(" — ");
+      return e.acquiredFromAddress ?? "";
   }
 }
 
-function formatToWhom(e) {
+function formatDispositionName(e) {
   if (e.status === "open" || !e.disposedToKind) return "";
   switch (e.disposedToKind) {
     case "form_4473":
-      return `4473 # ${e.form4473TransactionNumber ?? ""}`;
+    case "book_rollover_ref":
+      return "";
+    default:
+      return e.disposedToName ?? "";
+  }
+}
+
+function formatDispositionAddressOrLocator(e) {
+  if (e.status === "open" || !e.disposedToKind) return "";
+  switch (e.disposedToKind) {
+    case "form_4473":
+      return e.form4473TransactionNumber
+        ? `Form 4473 txn No. ${e.form4473TransactionNumber}`
+        : "";
     case "licensee":
-      return `${e.disposedToName ?? ""} — FFL ${e.disposedToFfl ?? ""}`.trim();
+      return e.disposedToFfl ? `FFL ${e.disposedToFfl}` : "";
     case "book_rollover_ref":
       return e.dispositionReference ?? "";
     default:
-      return [e.disposedToName, e.disposedToAddress].filter(Boolean).join(" — ");
+      return e.disposedToAddress ?? "";
   }
 }
+
+const DESC_FILL = [36, 54, 44];
+const ACQ_FILL = [70, 90, 78];
+const DISP_FILL = [55, 55, 55];
+const SUB_FILL = [58, 79, 67];
+const DISP_SUB_FILL = [72, 72, 72];
 
 const license = {
   businessName: "Rettmark Firearms (SAMPLE/DEMO)",
@@ -209,23 +261,23 @@ const manifestPath = path.join(outArg, "MANIFEST.txt");
 const csvHeader = [
   "Line",
   "Status",
-  "Manufacturer",
+  "Manufacturer / Importer / PMF",
   "Importer",
   "Model",
   "Serial No.",
   "Type",
-  "Caliber/Gauge",
+  "Caliber or gauge",
   "Acquisition Date",
-  "Acquired From Kind",
-  "Acquired From Name",
-  "Acquired From Address",
-  "Acquired From FFL",
+  "Acquisition Kind",
+  "Acquisition Name",
+  "Acquisition Address or License No.",
+  "Acquisition FFL",
   "Disposition Date",
-  "Disposed To Kind",
-  "Disposed To Name",
-  "Disposed To Address",
-  "Disposed To FFL",
-  "Form 4473 Txn No.",
+  "Disposition Kind",
+  "Disposition Name",
+  "Disposition Address, License No., or Form 4473 Transaction No.",
+  "Disposition FFL",
+  "Form 4473 Transaction No.",
   "Disposition Reference",
   "Notes",
   "Correction Reason",
@@ -243,7 +295,7 @@ const csvBody = entries
     [
       e.lineNumber,
       e.status,
-      e.manufacturer,
+      [e.manufacturer, e.importer].filter(Boolean).join(" / ") || e.manufacturer,
       e.importer,
       e.model,
       e.serialNumber,
@@ -251,13 +303,13 @@ const csvBody = entries
       e.caliberOrGauge,
       e.acquisitionDate,
       e.acquiredFromKind,
-      e.acquiredFromName,
-      e.acquiredFromAddress,
+      formatAcquisitionName(e),
+      formatAcquisitionAddressOrLicense(e),
       e.acquiredFromFfl,
       e.dispositionDate,
       e.disposedToKind,
-      e.disposedToName,
-      e.disposedToAddress,
+      formatDispositionName(e),
+      formatDispositionAddressOrLocator(e),
       e.disposedToFfl,
       e.form4473TransactionNumber,
       e.dispositionReference,
@@ -274,17 +326,18 @@ fs.writeFileSync(csvPath, `${csvHeader.join(",")}\n${csvBody}\n`, "utf8");
 
 const asciiLines = [
   "Rettmark Firearms — Firearms Acquisition & Disposition Record",
-  "Format: 27 CFR 478.125(e) dealer A&D (electronic)",
+  "Format: 27 CFR 478.125(e) Table 2 dealer A&D (electronic)",
   `FFL: ${license.fflNumber}`,
   `Business: ${license.businessName}`,
   `Operator: ${license.operatorName}`,
   "Sorted by acquisition date",
+  "Columns: Description | Acquisitions (Date, Name, Address/License No.) | Dispositions (Date, Name, Address/License No./4473)",
   "SAMPLE/DEMO DATA ONLY — not a real A&D record",
   "---",
 ];
 for (const e of entries) {
   asciiLines.push(
-    `L${e.lineNumber}|${e.manufacturer}|${e.importer}|${e.model}|${e.serialNumber}|${e.firearmType}|${e.caliberOrGauge}|Acq ${e.acquisitionDate}|From ${formatFromWhom(e)}|Disp ${e.dispositionDate}|To ${formatToWhom(e)}`,
+    `L${e.lineNumber}|${e.manufacturer}|${e.importer}|${e.model}|${e.serialNumber}|${e.firearmType}|${e.caliberOrGauge}|AcqDate ${e.acquisitionDate}|AcqName ${formatAcquisitionName(e)}|AcqAddrOrLic ${formatAcquisitionAddressOrLicense(e)}|DispDate ${e.dispositionDate}|DispName ${formatDispositionName(e)}|DispAddrLicOr4473 ${formatDispositionAddressOrLocator(e)}`,
   );
 }
 fs.writeFileSync(asciiPath, asciiLines.join("\n") + "\n", "utf8");
@@ -298,27 +351,76 @@ doc.setFontSize(10);
 doc.text(`${license.businessName}  ·  FFL ${license.fflNumber}`, 40, 52);
 doc.setFontSize(8);
 doc.text(
-  "Dealer A&D columns per 27 CFR 478.125(e). Electronic alternate method: ATF Ruling 2016-1. SAMPLE/DEMO only — not ATF-certified software.",
+  "Dealer A&D columns per 27 CFR 478.125(e) Table 2. Acquisitions (left) / Dispositions (right). SAMPLE/DEMO only — not ATF-certified software.",
   40,
   66,
 );
+const pageWidth = doc.internal.pageSize.getWidth();
+const marginX = 18;
+const tableWidth = pageWidth - marginX * 2;
+
 autoTable(doc, {
   startY: 78,
-  styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak" },
-  headStyles: { fillColor: [40, 40, 40], textColor: 255, fontStyle: "bold" },
+  tableWidth,
+  styles: {
+    fontSize: 5.5,
+    cellPadding: 1.5,
+    overflow: "linebreak",
+    valign: "top",
+  },
+  headStyles: { textColor: 255, fontStyle: "bold", halign: "left", overflow: "linebreak" },
+  columnStyles: {
+    0: { cellWidth: tableWidth * 0.028 },
+    1: { cellWidth: tableWidth * 0.11 },
+    2: { cellWidth: tableWidth * 0.055 },
+    3: { cellWidth: tableWidth * 0.07 },
+    4: { cellWidth: tableWidth * 0.05 },
+    5: { cellWidth: tableWidth * 0.05 },
+    6: { cellWidth: tableWidth * 0.055 },
+    7: { cellWidth: tableWidth * 0.08 },
+    8: { cellWidth: tableWidth * 0.105 },
+    9: { cellWidth: tableWidth * 0.055 },
+    10: { cellWidth: tableWidth * 0.075 },
+    11: { cellWidth: tableWidth * 0.167 },
+  },
+  margin: { left: marginX, right: marginX },
   head: [
     [
-      "Line",
-      "Manufacturer / Importer",
-      "Model",
-      "Serial No.",
-      "Type",
-      "Caliber",
-      "Acq. Date",
-      "Receipt",
-      "From Whom Received",
-      "Disp. Date",
-      "Disposition / To Whom",
+      { content: "Line", rowSpan: 2, styles: { fillColor: DESC_FILL } },
+      {
+        content: AD_GROUP.description,
+        colSpan: 5,
+        styles: { fillColor: DESC_FILL, halign: "center" },
+      },
+      {
+        content: AD_GROUP.acquisitions,
+        colSpan: 3,
+        styles: { fillColor: ACQ_FILL, halign: "center" },
+      },
+      {
+        content: AD_GROUP.dispositions,
+        colSpan: 3,
+        styles: { fillColor: DISP_FILL, halign: "center" },
+      },
+    ],
+    [
+      { content: AD_COL.manufacturer, styles: { fillColor: SUB_FILL, fontSize: 5.5 } },
+      { content: AD_COL.model, styles: { fillColor: SUB_FILL } },
+      { content: AD_COL.serialNo, styles: { fillColor: SUB_FILL } },
+      { content: AD_COL.type, styles: { fillColor: SUB_FILL } },
+      { content: AD_COL.caliberOrGauge, styles: { fillColor: SUB_FILL } },
+      { content: AD_COL.receiptDate, styles: { fillColor: ACQ_FILL } },
+      { content: AD_COL.acquisitionName, styles: { fillColor: ACQ_FILL } },
+      {
+        content: AD_COL.acquisitionAddressOrLicense,
+        styles: { fillColor: ACQ_FILL, fontSize: 5.5 },
+      },
+      { content: AD_COL.dispositionDate, styles: { fillColor: DISP_SUB_FILL } },
+      { content: AD_COL.dispositionName, styles: { fillColor: DISP_SUB_FILL } },
+      {
+        content: AD_COL.dispositionAddressOrLocator,
+        styles: { fillColor: DISP_SUB_FILL, fontSize: 5.5 },
+      },
     ],
   ],
   body: entries.map((e) => [
@@ -329,10 +431,11 @@ autoTable(doc, {
     e.firearmType,
     e.caliberOrGauge,
     e.acquisitionDate,
-    e.acquiredFromKind,
-    formatFromWhom(e),
+    formatAcquisitionName(e),
+    formatAcquisitionAddressOrLicense(e),
     e.dispositionDate || "",
-    formatToWhom(e),
+    formatDispositionName(e),
+    formatDispositionAddressOrLocator(e),
   ]),
 });
 fs.writeFileSync(pdfPath, Buffer.from(doc.output("arraybuffer")));
@@ -341,7 +444,8 @@ const createdAt = new Date().toISOString();
 const manifest = [
   "Rettmark Firearms — ATF inspection / premises download package",
   `Created: ${createdAt}`,
-  "Format basis: 27 CFR 478.125(e); ATF Ruling 2016-1",
+  "Format basis: 27 CFR 478.125(e) Table 2; ATF Ruling 2016-1",
+  "Layout: Acquisitions (left) / Dispositions (right); separate Name and Address columns",
   "Contents: unencrypted PDF (paper columns), CSV, and ASCII text of dealer A&D",
   "View: effective (corrected) A&D lines, sorted by acquisition date",
   "Use: print or provide this folder for ATF inspection / premises download",

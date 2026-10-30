@@ -16,26 +16,28 @@ pub fn export_csv(db: &AppDb, dest: &Path) -> Result<ExportResult> {
         std::fs::create_dir_all(parent)?;
     }
     let mut wtr = csv::Writer::from_path(dest).context("create csv")?;
+    // Headers mirror 27 CFR 478.125(e) Table 2 with separate Name vs Address/locator columns
+    // (IOI DeSanto layout guidance). Kind/FFL/4473 fields retained for machine readability.
     wtr.write_record([
         "Line",
         "Status",
-        "Manufacturer",
+        "Manufacturer / Importer / PMF",
         "Importer",
         "Model",
         "Serial No.",
         "Type",
-        "Caliber/Gauge",
+        "Caliber or gauge",
         "Acquisition Date",
-        "Acquired From Kind",
-        "Acquired From Name",
-        "Acquired From Address",
-        "Acquired From FFL",
+        "Acquisition Kind",
+        "Acquisition Name",
+        "Acquisition Address or License No.",
+        "Acquisition FFL",
         "Disposition Date",
-        "Disposed To Kind",
-        "Disposed To Name",
-        "Disposed To Address",
-        "Disposed To FFL",
-        "Form 4473 Txn No.",
+        "Disposition Kind",
+        "Disposition Name",
+        "Disposition Address, License No., or Form 4473 Transaction No.",
+        "Disposition FFL",
+        "Form 4473 Transaction No.",
         "Disposition Reference",
         "Notes",
         "Correction Reason",
@@ -43,10 +45,41 @@ pub fn export_csv(db: &AppDb, dest: &Path) -> Result<ExportResult> {
     ])?;
 
     for e in &entries {
+        let acq_address_or_license = match e.acquired_from_kind.as_str() {
+            "licensee" => e
+                .acquired_from_ffl
+                .clone()
+                .map(|f| format!("FFL {f}"))
+                .unwrap_or_default(),
+            "opening_inventory" => String::new(),
+            _ => e.acquired_from_address.clone().unwrap_or_default(),
+        };
+        let disp_address_or_locator = if e.status == "open" {
+            String::new()
+        } else {
+            match e.disposed_to_kind.as_deref().unwrap_or("") {
+                "form_4473" => e
+                    .form_4473_transaction_number
+                    .clone()
+                    .map(|n| format!("Form 4473 txn No. {n}"))
+                    .unwrap_or_default(),
+                "licensee" => e
+                    .disposed_to_ffl
+                    .clone()
+                    .map(|f| format!("FFL {f}"))
+                    .unwrap_or_default(),
+                "book_rollover_ref" => e.disposition_reference.clone().unwrap_or_default(),
+                _ => e.disposed_to_address.clone().unwrap_or_default(),
+            }
+        };
+        let manufacturer_importer_pmf = match &e.importer {
+            Some(imp) if !imp.is_empty() => format!("{} / {}", e.manufacturer, imp),
+            _ => e.manufacturer.clone(),
+        };
         wtr.write_record([
             e.line_number.to_string(),
             e.status.clone(),
-            e.manufacturer.clone(),
+            manufacturer_importer_pmf,
             e.importer.clone().unwrap_or_default(),
             e.model.clone(),
             e.serial_number.clone(),
@@ -55,12 +88,12 @@ pub fn export_csv(db: &AppDb, dest: &Path) -> Result<ExportResult> {
             e.acquisition_date.clone(),
             e.acquired_from_kind.clone(),
             e.acquired_from_name.clone(),
-            e.acquired_from_address.clone().unwrap_or_default(),
+            acq_address_or_license,
             e.acquired_from_ffl.clone().unwrap_or_default(),
             e.disposition_date.clone().unwrap_or_default(),
             e.disposed_to_kind.clone().unwrap_or_default(),
             e.disposed_to_name.clone().unwrap_or_default(),
-            e.disposed_to_address.clone().unwrap_or_default(),
+            disp_address_or_locator,
             e.disposed_to_ffl.clone().unwrap_or_default(),
             e.form_4473_transaction_number
                 .clone()
@@ -104,45 +137,57 @@ pub fn export_ascii(db: &AppDb, dest: &Path) -> Result<ExportResult> {
         writeln!(f, "Operator: {}", lic.operator_name)?;
     }
     writeln!(f, "Sorted by acquisition date")?;
+    writeln!(
+        f,
+        "Columns: Description | Acquisitions (Date, Name, Address/License No.) | Dispositions (Date, Name, Address/License No./4473)"
+    )?;
     writeln!(f, "---")?;
     for e in &entries {
-        let from = match e.acquired_from_kind.as_str() {
-            "licensee" => format!(
-                "{} / FFL {}",
-                e.acquired_from_name,
-                e.acquired_from_ffl.clone().unwrap_or_default()
-            ),
-            "opening_inventory" => format!("{} (opening inventory)", e.acquired_from_name),
-            _ => format!(
-                "{} / {}",
-                e.acquired_from_name,
-                e.acquired_from_address.clone().unwrap_or_default()
-            ),
+        let acq_name = if e.acquired_from_kind == "opening_inventory" {
+            format!("{} (opening inventory)", e.acquired_from_name)
+        } else {
+            e.acquired_from_name.clone()
         };
-        let to = if e.status == "open" {
-            String::new()
+        let acq_addr = match e.acquired_from_kind.as_str() {
+            "licensee" => e
+                .acquired_from_ffl
+                .clone()
+                .map(|f| format!("FFL {f}"))
+                .unwrap_or_default(),
+            "opening_inventory" => String::new(),
+            _ => e.acquired_from_address.clone().unwrap_or_default(),
+        };
+        let (disp_name, disp_addr) = if e.status == "open" {
+            (String::new(), String::new())
         } else {
             match e.disposed_to_kind.as_deref().unwrap_or("") {
-                "form_4473" => format!(
-                    "4473# {}",
-                    e.form_4473_transaction_number.clone().unwrap_or_default()
+                "form_4473" => (
+                    String::new(),
+                    e.form_4473_transaction_number
+                        .clone()
+                        .map(|n| format!("Form 4473 txn No. {n}"))
+                        .unwrap_or_default(),
                 ),
-                "licensee" => format!(
-                    "{} / FFL {}",
+                "licensee" => (
                     e.disposed_to_name.clone().unwrap_or_default(),
-                    e.disposed_to_ffl.clone().unwrap_or_default()
+                    e.disposed_to_ffl
+                        .clone()
+                        .map(|f| format!("FFL {f}"))
+                        .unwrap_or_default(),
                 ),
-                "book_rollover_ref" => e.disposition_reference.clone().unwrap_or_default(),
-                _ => format!(
-                    "{} / {}",
+                "book_rollover_ref" => (
+                    String::new(),
+                    e.disposition_reference.clone().unwrap_or_default(),
+                ),
+                _ => (
                     e.disposed_to_name.clone().unwrap_or_default(),
-                    e.disposed_to_address.clone().unwrap_or_default()
+                    e.disposed_to_address.clone().unwrap_or_default(),
                 ),
             }
         };
         writeln!(
             f,
-            "L{line}|{mfr}|{imp}|{model}|{ser}|{ftype}|{cal}|Acq {adate}|From {from}|Disp {ddate}|To {to}",
+            "L{line}|{mfr}|{imp}|{model}|{ser}|{ftype}|{cal}|AcqDate {adate}|AcqName {acq_name}|AcqAddrOrLic {acq_addr}|DispDate {ddate}|DispName {disp_name}|DispAddrLicOr4473 {disp_addr}",
             line = e.line_number,
             mfr = e.manufacturer,
             imp = e.importer.clone().unwrap_or_default(),
@@ -151,9 +196,11 @@ pub fn export_ascii(db: &AppDb, dest: &Path) -> Result<ExportResult> {
             ftype = e.firearm_type,
             cal = e.caliber_or_gauge,
             adate = e.acquisition_date,
-            from = from,
+            acq_name = acq_name,
+            acq_addr = acq_addr,
             ddate = e.disposition_date.clone().unwrap_or_default(),
-            to = to,
+            disp_name = disp_name,
+            disp_addr = disp_addr,
         )?;
     }
     let count = entries.len() as i64;

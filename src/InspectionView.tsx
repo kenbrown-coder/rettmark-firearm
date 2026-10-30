@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { BoundBookEntry, License } from "./types";
-import { paperColumns } from "./boundBookFormat";
+import { AD_COL, AD_GROUP, paperColumns } from "./boundBookFormat";
 
 const PAGE_SIZE = 20;
 
@@ -31,16 +31,70 @@ export function InspectionView({
   const safePage = Math.min(page, pageCount - 1);
   const slice = effective.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
+  const tableHead = (
+    <thead>
+      <tr className="group-head-row">
+        <th rowSpan={2} className="th-line">
+          Line
+        </th>
+        <th colSpan={5} className="th-description">
+          {AD_GROUP.description}
+        </th>
+        <th colSpan={3} className="th-acquisitions">
+          {AD_GROUP.acquisitions}
+        </th>
+        <th colSpan={3} className="th-dispositions">
+          {AD_GROUP.dispositions}
+        </th>
+      </tr>
+      <tr className="subhead-row">
+        <th className="th-description-sub">{AD_COL.manufacturer}</th>
+        <th className="th-description-sub">{AD_COL.model}</th>
+        <th className="th-description-sub">{AD_COL.serialNo}</th>
+        <th className="th-description-sub">{AD_COL.type}</th>
+        <th className="th-description-sub">{AD_COL.caliberOrGauge}</th>
+        <th className="th-acq-sub">{AD_COL.receiptDate}</th>
+        <th className="th-acq-sub">{AD_COL.acquisitionName}</th>
+        <th className="th-acq-sub">{AD_COL.acquisitionAddressOrLicense}</th>
+        <th className="th-disp-sub">{AD_COL.dispositionDate}</th>
+        <th className="th-disp-sub">{AD_COL.dispositionName}</th>
+        <th className="th-disp-sub">{AD_COL.dispositionAddressOrLocator}</th>
+      </tr>
+    </thead>
+  );
+
+  const renderRow = (e: BoundBookEntry, keyPrefix = "") => {
+    const c = paperColumns(e);
+    return (
+      <tr key={`${keyPrefix}${e.id}`} className={e.status === "open" ? "open" : ""}>
+        <td>{c.line}</td>
+        <td>{c.manufacturerImporter}</td>
+        <td>{c.model}</td>
+        <td className="serial">{c.serial}</td>
+        <td>{c.type}</td>
+        <td>{c.caliber}</td>
+        <td>{c.acquisitionDate}</td>
+        <td>{c.acquisitionName}</td>
+        <td>{c.acquisitionAddressOrLicense}</td>
+        <td>{c.dispositionDate}</td>
+        <td>{c.dispositionName}</td>
+        <td>{c.dispositionAddressOrLocator}</td>
+      </tr>
+    );
+  };
+
   return (
     <section className="panel inspection-panel">
       <div className="inspection-head">
         <div>
           <h2>Inspection mode</h2>
           <p className="lede">
-            Read-only view of the effective bound book in § 478.125(e) column order. Use for ATF
-            inspection presentation or printing. For the digital file inspectors commonly receive,
-            click <strong>Export for ATF inspection</strong> (unencrypted PDF + CSV + ASCII). Edits
-            are disabled here — return to Bound book / Acquisition / Disposition to change records.
+            Read-only view of the effective bound book in § 478.125(e) Table 2 column order —
+            <strong> Acquisitions</strong> on the left, dark-header <strong>Dispositions</strong> on
+            the right, with Name and Address in separate columns. Use for ATF inspection
+            presentation or printing. For the digital file inspectors commonly receive, click{" "}
+            <strong>Export for ATF inspection</strong> (unencrypted PDF + CSV + ASCII). Edits are
+            disabled here — return to Bound book / Acquisition / Disposition to change records.
           </p>
         </div>
         <div className="form-actions no-print">
@@ -60,8 +114,8 @@ export function InspectionView({
           {license.fflNumber ? ` · FFL ${license.fflNumber}` : ""}
         </div>
         <div className="muted">
-          Dealer A&amp;D — 27 CFR 478.125(e) · Electronic alternate method ATF Ruling 2016-1 ·
-          Effective (corrected) lines · Sorted by acquisition date
+          Dealer A&amp;D — 27 CFR 478.125(e) Table 2 · Electronic alternate method ATF Ruling
+          2016-1 · Effective (corrected) lines · Sorted by acquisition date
         </div>
         <div className="muted">
           Operator: {license.operatorName}
@@ -97,51 +151,12 @@ export function InspectionView({
 
       <div className="book-scroll inspection-scroll">
         <table className="book-table inspection-table">
-          <thead>
-            <tr>
-              <th>Line</th>
-              <th>Description of firearm — Manufacturer / Importer</th>
-              <th>Model</th>
-              <th>Serial No.</th>
-              <th>Type</th>
-              <th>Caliber / Gauge</th>
-              <th colSpan={2}>Receipt</th>
-              <th colSpan={2}>Disposition</th>
-            </tr>
-            <tr className="subhead-row">
-              <th></th>
-              <th></th>
-              <th></th>
-              <th></th>
-              <th></th>
-              <th></th>
-              <th>Date</th>
-              <th>Name and address or name and license No.</th>
-              <th>Date</th>
-              <th>Name and address or license No. or Form 4473 serial No.</th>
-            </tr>
-          </thead>
+          {tableHead}
           <tbody>
-            {slice.map((e) => {
-              const c = paperColumns(e);
-              return (
-                <tr key={e.id} className={e.status === "open" ? "open" : ""}>
-                  <td>{c.line}</td>
-                  <td>{c.manufacturerImporter}</td>
-                  <td>{c.model}</td>
-                  <td className="serial">{c.serial}</td>
-                  <td>{c.type}</td>
-                  <td>{c.caliber}</td>
-                  <td>{c.acquisitionDate}</td>
-                  <td>{c.fromWhom}</td>
-                  <td>{c.dispositionDate}</td>
-                  <td>{c.toWhom}</td>
-                </tr>
-              );
-            })}
+            {slice.map((e) => renderRow(e))}
             {effective.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ padding: "1.25rem", color: "var(--ink-muted)" }}>
+                <td colSpan={12} style={{ padding: "1.25rem", color: "var(--ink-muted)" }}>
                   No effective bound-book lines to present.
                 </td>
               </tr>
@@ -153,39 +168,8 @@ export function InspectionView({
       {/* Print-all table: shown only when printing */}
       <div className="print-only-all">
         <table className="book-table inspection-table">
-          <thead>
-            <tr>
-              <th>Line</th>
-              <th>Manufacturer / Importer</th>
-              <th>Model</th>
-              <th>Serial No.</th>
-              <th>Type</th>
-              <th>Caliber</th>
-              <th>Acq. date</th>
-              <th>From whom</th>
-              <th>Disp. date</th>
-              <th>To whom / 4473 / FFL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {effective.map((e) => {
-              const c = paperColumns(e);
-              return (
-                <tr key={`print-${e.id}`}>
-                  <td>{c.line}</td>
-                  <td>{c.manufacturerImporter}</td>
-                  <td>{c.model}</td>
-                  <td className="serial">{c.serial}</td>
-                  <td>{c.type}</td>
-                  <td>{c.caliber}</td>
-                  <td>{c.acquisitionDate}</td>
-                  <td>{c.fromWhom}</td>
-                  <td>{c.dispositionDate}</td>
-                  <td>{c.toWhom}</td>
-                </tr>
-              );
-            })}
-          </tbody>
+          {tableHead}
+          <tbody>{effective.map((e) => renderRow(e, "print-"))}</tbody>
         </table>
       </div>
     </section>

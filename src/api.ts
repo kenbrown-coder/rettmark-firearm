@@ -16,7 +16,14 @@ import type {
   SearchQuery,
 } from "./types";
 
-export { formatFromWhom, formatToWhom } from "./boundBookFormat";
+export {
+  formatAcquisitionAddressOrLicense,
+  formatAcquisitionName,
+  formatDispositionAddressOrLocator,
+  formatDispositionName,
+  formatFromWhom,
+  formatToWhom,
+} from "./boundBookFormat";
 
 export interface InspectionPackageResult {
   directory: string;

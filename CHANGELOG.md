@@ -2,6 +2,11 @@
 
 All notable releases of **Rettmark Bound Book** (Windows desktop).
 
+## 0.1.4 — 2026-10-30
+
+### Changed
+- **ATF IOI layout feedback (Albert J. DeSanto):** Inspection view, PDF export, bound-book grid, and CSV/ASCII now follow 27 CFR 478.125(e) Table 2 wording more closely — group headers **Acquisitions** (left) and **Dispositions** (right, darker), with **separate Name and Address** columns instead of a single cramped name+address cell.
+
 ## 0.1.3 — 2026-10-29
 
 ### Security

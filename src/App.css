@@ -291,7 +291,7 @@ button {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.82rem;
-  min-width: 1100px;
+  min-width: 1280px;
 }
 
 .book-table thead th {
@@ -304,7 +304,40 @@ button {
   text-align: left;
   padding: 0.55rem 0.45rem;
   border-right: 1px solid #3d5548;
+  white-space: normal;
+  vertical-align: bottom;
+  line-height: 1.25;
+}
+
+.inspection-table thead .group-head-row th {
+  text-align: center;
+  vertical-align: middle;
   white-space: nowrap;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.inspection-table thead .th-line,
+.inspection-table thead .th-description,
+.inspection-table thead .th-description-sub {
+  background: #24362c;
+}
+
+.inspection-table thead .th-acquisitions,
+.inspection-table thead .th-acq-sub {
+  background: #465a4e;
+}
+
+.inspection-table thead .th-dispositions,
+.inspection-table thead .th-disp-sub {
+  background: #3a3a3a;
+}
+
+.inspection-table thead .subhead-row th {
+  top: 2.1rem;
+  font-weight: 500;
+  font-size: 0.68rem;
+  max-width: 9.5rem;
 }
 
 .book-table tbody td {
@@ -596,12 +629,6 @@ button.linkish {
   gap: 0.75rem;
   align-items: center;
   margin-bottom: 0.65rem;
-}
-
-.inspection-table thead .subhead-row th {
-  background: #3a4f43;
-  font-weight: 500;
-  font-size: 0.72rem;
 }
 
 .inspection-scroll {
