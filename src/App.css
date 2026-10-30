@@ -317,20 +317,32 @@ button {
   letter-spacing: 0.02em;
 }
 
+/* Description of firearm — deep forest */
 .inspection-table thead .th-line,
-.inspection-table thead .th-description,
+.inspection-table thead .th-description {
+  background: #1e3328;
+}
+
 .inspection-table thead .th-description-sub {
-  background: #24362c;
+  background: #2d4a3a;
 }
 
-.inspection-table thead .th-acquisitions,
+/* Acquisitions (left) — clear mid green, distinct from charcoal Dispositions */
+.inspection-table thead .th-acquisitions {
+  background: #3d6b52;
+}
+
 .inspection-table thead .th-acq-sub {
-  background: #465a4e;
+  background: #4f8164;
 }
 
-.inspection-table thead .th-dispositions,
+/* Dispositions (right) — charcoal for strong left/right contrast */
+.inspection-table thead .th-dispositions {
+  background: #242424;
+}
+
 .inspection-table thead .th-disp-sub {
-  background: #3a3a3a;
+  background: #404040;
 }
 
 .inspection-table thead .subhead-row th {
@@ -597,12 +609,13 @@ button.linkish {
   text-decoration: underline;
 }
 
-.inspection-head {
+.inspection-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
-  justify-content: space-between;
-  align-items: flex-start;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 0.75rem;
 }
 
 .inspection-letterhead {
@@ -650,7 +663,7 @@ button.linkish {
 
   .backup-banner,
   .pager,
-  .inspection-head .form-actions {
+  .inspection-toolbar {
     display: none !important;
   }
 

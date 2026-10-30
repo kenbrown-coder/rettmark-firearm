@@ -10,11 +10,15 @@ import {
   formatDispositionName,
 } from "./boundBookFormat";
 
-const DESC_FILL: [number, number, number] = [36, 54, 44];
-const ACQ_FILL: [number, number, number] = [70, 90, 78];
-const DISP_FILL: [number, number, number] = [55, 55, 55];
-const SUB_FILL: [number, number, number] = [58, 79, 67];
-const DISP_SUB_FILL: [number, number, number] = [72, 72, 72];
+/** Description of firearm — deep forest */
+const DESC_FILL: [number, number, number] = [30, 51, 40];
+const DESC_SUB_FILL: [number, number, number] = [45, 74, 58];
+/** Acquisitions — clear mid green (left) */
+const ACQ_FILL: [number, number, number] = [61, 107, 82];
+const ACQ_SUB_FILL: [number, number, number] = [79, 129, 100];
+/** Dispositions — charcoal (right), strong contrast vs green */
+const DISP_FILL: [number, number, number] = [36, 36, 36];
+const DISP_SUB_FILL: [number, number, number] = [64, 64, 64];
 
 export function buildBoundBookPdf(
   license: License | null,
@@ -28,12 +32,14 @@ export function buildBoundBookPdf(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.text(`${title}${license?.fflNumber ? `  ·  FFL ${license.fflNumber}` : ""}`, 40, 52);
+
+  const metaParts: string[] = [];
+  if (license?.operatorName) metaParts.push(`Operator: ${license.operatorName}`);
+  if (license?.forms4473FiledNumerically) metaParts.push("Forms 4473 filed numerically");
+  metaParts.push(`${entries.length} line(s)`);
+  metaParts.push("Sorted by acquisition date");
   doc.setFontSize(8);
-  doc.text(
-    "Dealer A&D columns per 27 CFR 478.125(e) Table 2. Acquisitions (left) / Dispositions (right). Electronic alternate method: ATF Ruling 2016-1. Not ATF-certified software.",
-    40,
-    66,
-  );
+  doc.text(metaParts.join(" · "), 40, 66);
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 18;
@@ -86,20 +92,20 @@ export function buildBoundBookPdf(
       [
         {
           content: AD_COL.manufacturer,
-          styles: { fillColor: SUB_FILL, fontSize: 5.5 },
+          styles: { fillColor: DESC_SUB_FILL, fontSize: 5.5 },
         },
-        { content: AD_COL.model, styles: { fillColor: SUB_FILL } },
-        { content: AD_COL.serialNo, styles: { fillColor: SUB_FILL } },
-        { content: AD_COL.type, styles: { fillColor: SUB_FILL } },
-        { content: AD_COL.caliberOrGauge, styles: { fillColor: SUB_FILL } },
-        { content: AD_COL.receiptDate, styles: { fillColor: ACQ_FILL } },
+        { content: AD_COL.model, styles: { fillColor: DESC_SUB_FILL } },
+        { content: AD_COL.serialNo, styles: { fillColor: DESC_SUB_FILL } },
+        { content: AD_COL.type, styles: { fillColor: DESC_SUB_FILL } },
+        { content: AD_COL.caliberOrGauge, styles: { fillColor: DESC_SUB_FILL } },
+        { content: AD_COL.receiptDate, styles: { fillColor: ACQ_SUB_FILL } },
         {
           content: AD_COL.acquisitionName,
-          styles: { fillColor: ACQ_FILL },
+          styles: { fillColor: ACQ_SUB_FILL },
         },
         {
           content: AD_COL.acquisitionAddressOrLicense,
-          styles: { fillColor: ACQ_FILL, fontSize: 5.5 },
+          styles: { fillColor: ACQ_SUB_FILL, fontSize: 5.5 },
         },
         { content: AD_COL.dispositionDate, styles: { fillColor: DISP_SUB_FILL } },
         { content: AD_COL.dispositionName, styles: { fillColor: DISP_SUB_FILL } },

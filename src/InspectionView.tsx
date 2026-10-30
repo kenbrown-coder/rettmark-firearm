@@ -85,19 +85,8 @@ export function InspectionView({
 
   return (
     <section className="panel inspection-panel">
-      <div className="inspection-head">
-        <div>
-          <h2>Inspection mode</h2>
-          <p className="lede">
-            Read-only view of the effective bound book in § 478.125(e) Table 2 column order —
-            <strong> Acquisitions</strong> on the left, dark-header <strong>Dispositions</strong> on
-            the right, with Name and Address in separate columns. Use for ATF inspection
-            presentation or printing. For the digital file inspectors commonly receive, click{" "}
-            <strong>Export for ATF inspection</strong> (unencrypted PDF + CSV + ASCII). Edits are
-            disabled here — return to Bound book / Acquisition / Disposition to change records.
-          </p>
-        </div>
-        <div className="form-actions no-print">
+      <div className="inspection-toolbar no-print">
+        <div className="form-actions">
           <button className="btn" type="button" onClick={onExportPackage} disabled={busy}>
             Export for ATF inspection
           </button>
@@ -114,16 +103,14 @@ export function InspectionView({
           {license.fflNumber ? ` · FFL ${license.fflNumber}` : ""}
         </div>
         <div className="muted">
-          Dealer A&amp;D — 27 CFR 478.125(e) Table 2 · Electronic alternate method ATF Ruling
-          2016-1 · Effective (corrected) lines · Sorted by acquisition date
-        </div>
-        <div className="muted">
           Operator: {license.operatorName}
           {license.forms4473FiledNumerically
             ? " · Forms 4473 filed numerically"
             : ""}
           {" · "}
           {effective.length} line(s)
+          {" · "}
+          Sorted by acquisition date
         </div>
       </div>
 

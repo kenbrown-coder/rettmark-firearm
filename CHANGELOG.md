@@ -2,6 +2,12 @@
 
 All notable releases of **Rettmark Bound Book** (Windows desktop).
 
+## 0.1.5 — 2026-10-30
+
+### Changed
+- **Inspection PDF polish:** Printable Inspection view and Export PDF drop instructional/UI copy (how-to blurbs, “click Export…”, “Edits are disabled…”, long electronic-alternate-method boilerplate). Letterhead keeps business name, FFL, form title, operator, line count, and sorted-by-acquisition-date.
+- **Header contrast:** Group headers **Acquisitions** (mid green) vs **Dispositions** (charcoal) are clearly contrasting; column subheader rows use a lighter shade of each group. Screen Inspection view matches the PDF.
+
 ## 0.1.4 — 2026-10-30
 
 ### Changed

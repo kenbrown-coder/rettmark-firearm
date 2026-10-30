@@ -108,11 +108,13 @@ function formatDispositionAddressOrLocator(e) {
   }
 }
 
-const DESC_FILL = [36, 54, 44];
-const ACQ_FILL = [70, 90, 78];
-const DISP_FILL = [55, 55, 55];
-const SUB_FILL = [58, 79, 67];
-const DISP_SUB_FILL = [72, 72, 72];
+/** Match app PDF (0.1.5+): green Acquisitions vs charcoal Dispositions */
+const DESC_FILL = [30, 51, 40];
+const DESC_SUB_FILL = [45, 74, 58];
+const ACQ_FILL = [61, 107, 82];
+const ACQ_SUB_FILL = [79, 129, 100];
+const DISP_FILL = [36, 36, 36];
+const DISP_SUB_FILL = [64, 64, 64];
 
 const license = {
   businessName: "Rettmark Firearms (SAMPLE/DEMO)",
@@ -351,7 +353,7 @@ doc.setFontSize(10);
 doc.text(`${license.businessName}  ·  FFL ${license.fflNumber}`, 40, 52);
 doc.setFontSize(8);
 doc.text(
-  "Dealer A&D columns per 27 CFR 478.125(e) Table 2. Acquisitions (left) / Dispositions (right). SAMPLE/DEMO only — not ATF-certified software.",
+  `Operator: ${license.operatorName} · ${entries.length} line(s) · Sorted by acquisition date · SAMPLE/DEMO only`,
   40,
   66,
 );
@@ -404,16 +406,16 @@ autoTable(doc, {
       },
     ],
     [
-      { content: AD_COL.manufacturer, styles: { fillColor: SUB_FILL, fontSize: 5.5 } },
-      { content: AD_COL.model, styles: { fillColor: SUB_FILL } },
-      { content: AD_COL.serialNo, styles: { fillColor: SUB_FILL } },
-      { content: AD_COL.type, styles: { fillColor: SUB_FILL } },
-      { content: AD_COL.caliberOrGauge, styles: { fillColor: SUB_FILL } },
-      { content: AD_COL.receiptDate, styles: { fillColor: ACQ_FILL } },
-      { content: AD_COL.acquisitionName, styles: { fillColor: ACQ_FILL } },
+      { content: AD_COL.manufacturer, styles: { fillColor: DESC_SUB_FILL, fontSize: 5.5 } },
+      { content: AD_COL.model, styles: { fillColor: DESC_SUB_FILL } },
+      { content: AD_COL.serialNo, styles: { fillColor: DESC_SUB_FILL } },
+      { content: AD_COL.type, styles: { fillColor: DESC_SUB_FILL } },
+      { content: AD_COL.caliberOrGauge, styles: { fillColor: DESC_SUB_FILL } },
+      { content: AD_COL.receiptDate, styles: { fillColor: ACQ_SUB_FILL } },
+      { content: AD_COL.acquisitionName, styles: { fillColor: ACQ_SUB_FILL } },
       {
         content: AD_COL.acquisitionAddressOrLicense,
-        styles: { fillColor: ACQ_FILL, fontSize: 5.5 },
+        styles: { fillColor: ACQ_SUB_FILL, fontSize: 5.5 },
       },
       { content: AD_COL.dispositionDate, styles: { fillColor: DISP_SUB_FILL } },
       { content: AD_COL.dispositionName, styles: { fillColor: DISP_SUB_FILL } },
