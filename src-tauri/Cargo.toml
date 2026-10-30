@@ -1,0 +1,39 @@
+[package]
+name = "rettmark-firearm"
+version = "0.1.5"
+description = "Rettmark Firearms digital FFL A&D bound book"
+authors = ["Ken Brown / Rettmark Firearms"]
+edition = "2021"
+default-run = "rettmark-firearm"
+
+[lib]
+name = "rettmark_firearm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.41", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+aes-gcm = "0.11"
+argon2 = "0.6"
+rand = "0.10"
+zeroize = "1"
+hex = "0.4"
+thiserror = "2"
+anyhow = "1"
+base64 = "0.22"
+csv = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
